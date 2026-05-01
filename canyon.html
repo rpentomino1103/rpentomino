@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>canyon — galton</title>
+<link rel="icon" href="data:,">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}
+  body{
+    background-image:url('/photos/canyon.jpg');
+    background-size:cover;
+    background-position:center 35%;
+    background-repeat:no-repeat;
+  }
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;pointer-events:none}
+  nav{
+    position:fixed;left:14px;bottom:12px;z-index:2;
+    font-size:11px;letter-spacing:.14em;text-transform:lowercase;
+    mix-blend-mode:difference;opacity:.55;
+    user-select:none;
+  }
+  nav a{
+    color:#fff;text-decoration:none;margin-right:14px;
+    border-bottom:1px solid transparent;padding-bottom:1px;
+    transition:border-color .25s ease, opacity .25s ease;
+  }
+  nav a:hover{border-bottom-color:#fff}
+  nav a.on{border-bottom-color:#fff;opacity:1}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<nav>
+  <a href="/" >redwood</a>
+  <a href="/canyon" class="on">canyon</a>
+</nav>
+<script>
+(() => {
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let W=0, H=0, DPR=Math.min(window.devicePixelRatio||1, 2);
+
+  // ----- tunables -----
+  const ROWS        = 18;     // peg rows
+  const SPAWN_RATE  = 0.55;   // chance per frame to spawn a new ball
+  const MAX_BALLS   = 260;    // soft cap
+  const G           = 0.18;   // gravity (px/frame^2 in normalized units)
+  const FRICTION    = 0.992;
+  const RESTITUTION = 0.62;
+  const PEG_R       = 3.2;    // peg radius (visual + collision)
+  const BALL_R      = 2.6;    // ball radius
+  const TRAIL_FADE  = 0.045;  // destination-out alpha per frame (dappled trail decay)
+  const BIN_FADE    = 0.012;  // slower fade for the histogram base
+  const SHIMMER     = 0.12;   // additive light flicker
+  // --------------------
+
+  let pegs = [];
+  let balls = [];
+  let bins = [];      // counts per bin (bottom histogram)
+  let board = {x:0,y:0,w:0,h:0,topY:0,botY:0,colW:0};
+
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    cvs.width = W*DPR; cvs.height = H*DPR;
+    cvs.style.width = W+'px'; cvs.style.height = H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    layout();
+  }
+
+  function layout(){
+    // Centered board, sized to viewport.
+    const margin = Math.min(W,H)*0.06;
+    const targetW = Math.min(W*0.62, 720);
+    const targetH = Math.min(H*0.78, 920);
+    board.w = targetW;
+    board.h = targetH;
+    board.x = (W - board.w)/2;
+    board.y = (H - board.h)/2 - margin*0.2;
+    board.topY = board.y + board.h*0.08;
+    board.botY = board.y + board.h*0.78;
+    board.colW = board.w / (ROWS + 2);
+
+    // Triangular peg grid.
+    pegs = [];
+    const rowH = (board.botY - board.topY) / (ROWS - 1);
+    for(let r=0; r<ROWS; r++){
+      const cy = board.topY + r*rowH;
+      const cnt = r+1;
+      const totalW = (cnt-1) * board.colW;
+      const startX = board.x + board.w/2 - totalW/2;
+      for(let i=0;i<cnt;i++){
+        pegs.push({x:startX + i*board.colW, y:cy});
+      }
+    }
+    // Bins along the bottom — one per peg in last row + edges.
+    const binCount = ROWS + 1;
+    bins = new Array(binCount).fill(0);
+  }
+
+  function spawn(){
+    if(balls.length >= MAX_BALLS) return;
+    const cx = board.x + board.w/2 + (Math.random()-0.5) * board.colW * 0.6;
+    balls.push({
+      x: cx,
+      y: board.y + board.h*0.02,
+      vx: (Math.random()-0.5)*0.3,
+      vy: 0,
+      life: 0,
+      hue: 28 + Math.random()*22, // warm canyon-light hues
+    });
+  }
+
+  function step(){
+    // Spawn.
+    if(Math.random() < SPAWN_RATE) spawn();
+
+    // Update balls.
+    for(let i=balls.length-1; i>=0; i--){
+      const b = balls[i];
+      b.vy += G;
+      b.vx *= FRICTION;
+      b.x  += b.vx;
+      b.y  += b.vy;
+      b.life++;
+
+      // Peg collisions — simple radius test against nearby pegs only.
+      for(let p=0; p<pegs.length; p++){
+        const pg = pegs[p];
+        const dy = b.y - pg.y;
+        if(dy < -20 || dy > 20) continue;
+        const dx = b.x - pg.x;
+        const d2 = dx*dx + dy*dy;
+        const rr = (PEG_R + BALL_R);
+        if(d2 < rr*rr){
+          const d = Math.sqrt(d2) || 0.0001;
+          const nx = dx/d, ny = dy/d;
+          // Push out.
+          const overlap = rr - d;
+          b.x += nx*overlap;
+          b.y += ny*overlap;
+          // Reflect velocity.
+          const vn = b.vx*nx + b.vy*ny;
+          b.vx = (b.vx - 2*vn*nx) * RESTITUTION;
+          b.vy = (b.vy - 2*vn*ny) * RESTITUTION;
+          // Tiny lateral nudge — this is what makes the binomial distribution emerge.
+          b.vx += (Math.random()-0.5)*0.6;
+        }
+      }
+
+      // Bin landing — once past botY, drop into a bin and remove.
+      if(b.y > board.botY + 4){
+        const rel = (b.x - board.x) / board.w;
+        const idx = Math.max(0, Math.min(bins.length-1, Math.floor(rel * bins.length)));
+        bins[idx] += 1;
+        balls.splice(i,1);
+      } else if(b.y > H + 20 || b.x < -20 || b.x > W+20){
+        balls.splice(i,1);
+      }
+    }
+  }
+
+  function draw(){
+    // Trail decay — punch translucent holes through previous frame so the
+    // canyon photo shows through. This is the same destination-out trick as
+    // the redwood/Game-of-Life page.
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,' + TRAIL_FADE + ')';
+    ctx.fillRect(0,0,W,H);
+
+    // Draw pegs as soft warm dots — additive so they glow against the rock.
+    ctx.globalCompositeOperation = 'lighter';
+    for(let i=0;i<pegs.length;i++){
+      const p = pegs[i];
+      const flick = 0.55 + Math.sin((performance.now()*0.001) + i*0.37) * SHIMMER;
+      const g = ctx.createRadialGradient(p.x,p.y,0, p.x,p.y, PEG_R*3.2);
+      g.addColorStop(0, 'rgba(255,236,200,' + (0.55*flick) + ')');
+      g.addColorStop(1, 'rgba(255,236,200,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x,p.y, PEG_R*3.2, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Draw balls — bright dappled-light points with soft halos.
+    for(let i=0;i<balls.length;i++){
+      const b = balls[i];
+      const a = Math.min(1, 0.3 + b.life*0.02);
+      const g = ctx.createRadialGradient(b.x,b.y,0, b.x,b.y, BALL_R*5);
+      g.addColorStop(0, 'hsla(' + b.hue + ',95%,80%,' + (0.9*a) + ')');
+      g.addColorStop(0.4,'hsla(' + b.hue + ',95%,70%,' + (0.35*a) + ')');
+      g.addColorStop(1, 'hsla(' + b.hue + ',95%,60%,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(b.x,b.y, BALL_R*5, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Histogram at the bottom — translucent warm bars.
+    let maxBin = 1;
+    for(let i=0;i<bins.length;i++) if(bins[i] > maxBin) maxBin = bins[i];
+    const baseY = board.y + board.h*0.96;
+    const maxBarH = board.h*0.16;
+    const bw = (board.w / bins.length) * 0.78;
+    for(let i=0;i<bins.length;i++){
+      const v = bins[i] / maxBin;
+      if(v <= 0) continue;
+      const cx = board.x + (i+0.5) * (board.w / bins.length);
+      const h = v * maxBarH;
+      const g = ctx.createLinearGradient(0, baseY-h, 0, baseY);
+      g.addColorStop(0, 'rgba(255,210,150,0.0)');
+      g.addColorStop(1, 'rgba(255,180,110,0.55)');
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - bw/2, baseY-h, bw, h);
+    }
+    // Slow histogram decay so it breathes instead of accumulating forever.
+    if(Math.random() < 0.5){
+      for(let i=0;i<bins.length;i++) bins[i] *= (1 - BIN_FADE);
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function loop(){
+    step();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resize, {passive:true});
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>rpentomino</title>
+  <meta name="description" content="" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%23000%22/></svg>" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .bg {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      object-position: center;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+    }
+    h1 {
+      position: absolute;
+      left: -10000px;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <h1>rpentomino</h1>
+  <img class="bg" src="/photos/redwood.jpg" alt="" />
+  <script>
+(()=>{
+const CELL=10;
+const STEP_MS=110;
+const SEED_RADIUS=3;
+const SEED_DENSITY=0.35;
+const SEED_THROTTLE=40;
+const PEAK_ALPHA=0.13;
+const PEAK_AGE=6;
+const FADE_AGE=28;
+const FADE_OUT_GEN=1103;
+const LIFETIME_FADE=80;
+const LIFETIME_GAMMA=2.2;
+const RIPPLE_AMP=0.22;
+const RIPPLE_FREQ_T=0.0009;
+const RIPPLE_FREQ_S=0.22;
+const TRAIL_FADE=0.10;
+const COLOR_FREQ_S=0.012;
+const COLOR_FREQ_T=0.00018;
+const WARM=[170,225,235];
+const COOL=[195,215,240];
+const DRAG_MOVE_THRESHOLD=6;
+const RPENT=[[1,0],[2,0],[0,1],[1,1],[1,2]];
+const cv=document.createElement('canvas');
+Object.assign(cv.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',pointerEvents:'none',zIndex:'9999',mixBlendMode:'screen'});
+document.body.appendChild(cv);
+const ctx=cv.getContext('2d');
+let cols,rows,alive,age,totalAge,nextArr,nextAge,dpr;
+let generation=0;
+function resize(){
+dpr=window.devicePixelRatio||1;
+cv.width=Math.floor(innerWidth*dpr);
+cv.height=Math.floor(innerHeight*dpr);
+cols=Math.ceil(innerWidth/CELL);
+rows=Math.ceil(innerHeight/CELL);
+alive=new Uint8Array(cols*rows);
+age=new Uint16Array(cols*rows);
+totalAge=new Uint16Array(cols*rows);
+nextArr=new Uint8Array(cols*rows);
+nextAge=new Uint16Array(cols*rows);
+}
+resize();
+addEventListener('resize',resize);
+function idx(x,y){return y*cols+x;}
+function setCell(x,y){
+const xx=(x%cols+cols)%cols;
+const yy=(y%rows+rows)%rows;
+const i=idx(xx,yy);
+if(!alive[i]){alive[i]=1;age[i]=1;totalAge[i]=0;}
+}
+function step(){
+generation++;
+for(let y=0;y<rows;y++){
+for(let x=0;x<cols;x++){
+let n=0;
+for(let dy=-1;dy<=1;dy++){
+for(let dx=-1;dx<=1;dx++){
+if(!dx&&!dy)continue;
+const nx=(x+dx+cols)%cols;
+const ny=(y+dy+rows)%rows;
+n+=alive[idx(nx,ny)];
+}
+}
+const i=idx(x,y);
+const a=alive[i];
+let live=0;
+if(a&&(n===2||n===3))live=1;
+else if(!a&&n===3)live=1;
+nextArr[i]=live;
+if(live){
+nextAge[i]=a?Math.min(age[i]+1,65535):1;
+totalAge[i]=Math.min(totalAge[i]+1,65535);
+}else{
+nextAge[i]=0;
+}
+}
+}
+const ta=alive;alive=nextArr;nextArr=ta;
+const tg=age;age=nextAge;nextAge=tg;
+}
+function alphaFor(a){
+if(a<=0)return 0;
+if(a<=PEAK_AGE)return PEAK_ALPHA*(a/PEAK_AGE);
+if(a<=FADE_AGE)return PEAK_ALPHA*(1-(a-PEAK_AGE)/(FADE_AGE-PEAK_AGE));
+return 0.02;
+}
+function lerp(a,b,t){return a+(b-a)*t;}
+function colorAt(x,y,t){
+const m=0.5+0.5*Math.sin((x+y)*COLOR_FREQ_S+t*COLOR_FREQ_T*6.283);
+const r=Math.round(lerp(WARM[0],COOL[0],m));
+const g=Math.round(lerp(WARM[1],COOL[1],m));
+const b=Math.round(lerp(WARM[2],COOL[2],m));
+return r+','+g+','+b;
+}
+function draw(now){
+ctx.setTransform(dpr,0,0,dpr,0,0);
+ctx.globalCompositeOperation='destination-out';
+ctx.fillStyle='rgba(0,0,0,'+TRAIL_FADE+')';
+ctx.fillRect(0,0,innerWidth,innerHeight);
+ctx.globalCompositeOperation='source-over';
+const genFade=Math.max(0,1-generation/FADE_OUT_GEN);
+if(genFade<=0){cv.style.visibility='hidden';return;}
+cv.style.visibility='visible';
+const t=now*RIPPLE_FREQ_T;
+const cellHalf=CELL*0.5;
+const r0=CELL*0.10;
+const r1=CELL*1.0;
+for(let y=0;y<rows;y++){
+for(let x=0;x<cols;x++){
+const i=idx(x,y);
+if(!alive[i])continue;
+let aBase=alphaFor(age[i]);
+const lifeRaw=Math.max(0,1-totalAge[i]/LIFETIME_FADE);
+const lifeFade=Math.pow(lifeRaw,LIFETIME_GAMMA);
+let a=aBase*genFade*lifeFade;
+const ripple=1+RIPPLE_AMP*Math.sin((x+y)*RIPPLE_FREQ_S+t*6.283);
+a*=ripple;
+if(a<=0.003)continue;
+const cx=x*CELL+cellHalf;
+const cy=y*CELL+cellHalf;
+const rgb=colorAt(x,y,now);
+const grad=ctx.createRadialGradient(cx,cy,r0,cx,cy,r1);
+grad.addColorStop(0,'rgba('+rgb+','+(a*0.85).toFixed(3)+')');
+grad.addColorStop(0.5,'rgba('+rgb+','+(a*0.35).toFixed(3)+')');
+grad.addColorStop(1,'rgba('+rgb+',0)');
+ctx.fillStyle=grad;
+ctx.fillRect(cx-r1,cy-r1,r1*2,r1*2);
+}
+}
+}
+let lastStep=0;
+function loop(now){
+if(now-lastStep>=STEP_MS){lastStep=now;step();}
+draw(now);
+requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+function seedRpent(px,py){
+const cx=Math.floor(px/CELL);
+const cy=Math.floor(py/CELL);
+for(const[dx,dy]of RPENT)setCell(cx+dx-1,cy+dy-1);
+}
+function seedScatter(px,py){
+const cx=Math.floor(px/CELL);
+const cy=Math.floor(py/CELL);
+for(let dy=-SEED_RADIUS;dy<=SEED_RADIUS;dy++){
+for(let dx=-SEED_RADIUS;dx<=SEED_RADIUS;dx++){
+if(Math.random()>SEED_DENSITY)continue;
+setCell(cx+dx,cy+dy);
+}
+}
+}
+let pressed=false;
+let pressX=0,pressY=0,moved=false,lastSeed=0;
+addEventListener('pointerdown',e=>{
+pressed=true;
+pressX=e.clientX;pressY=e.clientY;
+moved=false;
+lastSeed=performance.now();
+});
+addEventListener('pointermove',e=>{
+if(!pressed)return;
+const dx=e.clientX-pressX;
+const dy=e.clientY-pressY;
+if(!moved&&dx*dx+dy*dy>=DRAG_MOVE_THRESHOLD*DRAG_MOVE_THRESHOLD)moved=true;
+if(!moved)return;
+const now=performance.now();
+if(now-lastSeed<SEED_THROTTLE)return;
+lastSeed=now;
+seedScatter(e.clientX,e.clientY);
+});
+function endPress(e){
+if(!pressed)return;
+pressed=false;
+if(!moved&&e&&typeof e.clientX==='number'){
+seedRpent(e.clientX,e.clientY);
+}
+}
+addEventListener('pointerup',endPress);
+addEventListener('pointercancel',endPress);
+})();
+  </script>
+</body>
+</html>

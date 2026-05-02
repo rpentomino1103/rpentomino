@@ -60,3 +60,59 @@
 
   function resize(){
     DPR = Math.min(window.devicePixelRatio||1, 2);
+    function pileSurfaceY(x) {
+    const px = Math.max(0, Math.min(pile.width - 1, Math.floor(x * DPR)));
+    const data = pctx.getImageData(px, 0, 1, pile.height).data;
+    for (let y = 0; y < pile.height; y++) {
+      if (data[y * 4 + 3] > 40) return y / DPR;
+    }
+    return H - PILE_BASE_H;
+  }
+
+  function depositToPile(x, y, r) {
+    const radius = r * PILE_SIGMA * 3;
+    const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
+    grad.addColorStop(0, 'rgba(235,240,255,' + (PILE_ALPHA * 4) + ')');
+    grad.addColorStop(1, 'rgba(235,240,255,0)');
+    pctx.fillStyle = grad;
+    pctx.beginPath();
+    pctx.arc(x, y, radius, 0, Math.PI * 2);
+    pctx.fill();
+  }
+
+  function draw() {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,' + TRAIL_FADE + ')';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+
+    pctx.globalCompositeOperation = 'destination-out';
+    pctx.fillStyle = 'rgba(0,0,0,' + PILE_DECAY + ')';
+    pctx.fillRect(0, 0, W, H);
+    pctx.globalCompositeOperation = 'source-over';
+
+    for (const f of flakes) {
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(240,245,255,' + (FLAKE_ALPHA * f.a) + ')';
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.drawImage(pile, 0, 0, W, H);
+  }
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (Math.random() < SPAWN_RATE) spawn();
+    if (Math.random() < SPAWN_RATE) spawn();
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -35,23 +35,32 @@
 </nav>
 <script>
 (() => {
-  // Kinetic / Galton Parameters
-  const SPAWN_RATE   = 0.65;
-  const MAX_FLAKES   = 350;
-  const FALL_MIN     = 20;
-  const FALL_MAX     = 45;
+  // --- MODIFIED PARAMETERS FOR SUBTLE SNOWFALL ---
+
+  // SPAWN_RATE: Higher allows more 'subtle' flakes without making the scene empty.
+  const SPAWN_RATE   = 0.95; 
+  // MAX_FLAKES: Increased to allow a larger 'cloud' of faint flakes.
+  const MAX_FLAKES   = 600; 
+  // FALL velocities: Much lower numbers make it slow.
+  const FALL_MIN     = 6;  // Slowed from 20
+  const FALL_MAX     = 14; // Slowed from 45
   const PEG_ROWS     = 22;
-  const KICK_PX      = 7;
-  
-  // Visuals ported from Game of Life script
+  // KICK_PX: Larger number means wider branching, wider final distribution.
+  const KICK_PX      = 22; // Widened from 7
+
+  // Visual Porting ( ported from Redwood script but significantly softened )
   const FLAKE_R_MIN  = 1.5;
   const FLAKE_R_MAX  = 4.5;
-  const TRAIL_FADE   = 0.10;
-  const PILE_DECAY   = 0.0015;
-  const MELT_RATE    = 0.08; 
+  // TRAIL_FADE: A lower number here results in longer, fainter trails.
+  const TRAIL_FADE   = 0.04; // Softened from 0.10
+  // PILE_DECAY: A slightly higher number prevents large pile build-up, making it 'barely discernible'.
+  const PILE_DECAY   = 0.004; // Increased from 0.0015
+  const MELT_RATE    = 0.06;
   const COLOR_FREQ_T = 0.00018;
   const WARM = [170, 225, 235];
   const COOL = [195, 215, 240];
+
+  // --- REST OF THE SCRIPT (Core Logic) ---
 
   const cvs = document.getElementById('c');
   const ctx = cvs.getContext('2d');
@@ -75,7 +84,6 @@
     ctx.scale(DPR, DPR);
     pctx.scale(DPR, DPR);
 
-    // Retain existing topography on resize
     const oldHeights = surfaceHeights;
     surfaceHeights = new Float32Array(W);
     for(let i = 0; i < W; i++) {
@@ -107,20 +115,22 @@
   }
 
   function depositToPile(x, y, r, rgb) {
-    // 1. Visual Accumulation (Soft Gradient)
+    // 1. Visual Accumulation (Much Fainter Soft Gradient)
     const radius = r * 4; 
     const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
-    grad.addColorStop(0, `rgba(${rgb}, 0.2)`);
+    // Modified: reduced initial alpha stop from 0.2 to 0.015 for much higher translucency
+    grad.addColorStop(0, `rgba(${rgb}, 0.015)`); 
     grad.addColorStop(1, `rgba(${rgb}, 0)`);
     pctx.fillStyle = grad;
     pctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
 
-    // 2. Physical Topography Update (Gaussian Drop)
+    // 2. Physical Topography Update (Gaussian Drop - Reduced Impact)
     const spread = Math.floor(r * 2.5);
     for (let i = -spread; i <= spread; i++) {
       const ix = Math.floor(x) + i;
       if (ix >= 0 && ix < W) {
-        const drop = (r * 0.35) * Math.exp(-(i * i) / (spread * spread / 4));
+        // Reduced 'drop' value to prevent a steep physical pile
+        const drop = (r * 0.25) * Math.exp(-(i * i) / (spread * spread / 4));
         surfaceHeights[ix] = Math.max(0, surfaceHeights[ix] - drop);
       }
     }
@@ -130,7 +140,6 @@
     const rowHeight = H / PEG_ROWS;
     const rgb = colorAt(now);
 
-    // Organically melt the physical surface to match visual decay
     for (let i = 0; i < W; i++) {
       if (surfaceHeights[i] < H - 10) {
         surfaceHeights[i] = Math.min(H - 10, surfaceHeights[i] + MELT_RATE * dt * 60);
@@ -143,14 +152,12 @@
 
       const currentRow = Math.floor(f.y / rowHeight);
       
-      // The Galton Kick
       if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
         const direction = Math.random() < 0.5 ? -1 : 1;
         f.x += direction * KICK_PX;
         f.lastRow = currentRow;
       }
 
-      // Fast topography check
       const ix = Math.max(0, Math.min(W - 1, Math.floor(f.x)));
       const surfaceY = surfaceHeights[ix];
       
@@ -176,11 +183,12 @@
 
     const rgb = colorAt(now);
 
-    // Draw Soft Orbs
+    // Draw Soft Orbs (porting the Redwood translucent look)
     for (const f of flakes) {
       const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 1.5);
-      grad.addColorStop(0, `rgba(${rgb}, 0.8)`);
-      grad.addColorStop(0.5, `rgba(${rgb}, 0.3)`);
+      // Modified: significantly reduced alpha stops to make flakes 'barely discernible'
+      grad.addColorStop(0, `rgba(${rgb}, 0.12)`);   // Reduced from 0.8
+      grad.addColorStop(0.5, `rgba(${rgb}, 0.03)`); // Reduced from 0.3
       grad.addColorStop(1, `rgba(${rgb}, 0)`);
       ctx.fillStyle = grad;
       ctx.fillRect(f.x - f.r * 1.5, f.y - f.r * 1.5, f.r * 3, f.r * 3);
@@ -195,6 +203,7 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     
+    // Increased spawn events slightly to populate the fainter cloud
     if (Math.random() < SPAWN_RATE) spawn();
     if (Math.random() < SPAWN_RATE) spawn();
     

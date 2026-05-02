@@ -6,30 +6,28 @@
 <title>canyon</title>
 <link rel="icon" href="data:,">
 <style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}
-  body{
-    background-image:url('/photos/canyon.jpg');
-    background-size:cover;
-    background-position:center bottom;
-    background-repeat:no-repeat;
+  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}
+  .bg{
+    position:fixed;inset:0;width:100vw;height:100vh;
+    object-fit:cover;
+    object-position:50% 40%;
+    user-select:none;-webkit-user-drag:none;pointer-events:none;
   }
-  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;pointer-events:none}
-  nav{
-    position:fixed;left:14px;bottom:12px;z-index:2;
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;
+    pointer-events:none;mix-blend-mode:screen}
+  nav{position:fixed;left:14px;bottom:12px;z-index:2;
     font-size:11px;letter-spacing:.14em;text-transform:lowercase;
-    mix-blend-mode:difference;opacity:.55;
-    user-select:none;
-  }
-  nav a{
-    color:#fff;text-decoration:none;margin-right:14px;
+    mix-blend-mode:difference;opacity:.55;user-select:none}
+  nav a{color:#fff;text-decoration:none;margin-right:14px;
     border-bottom:1px solid transparent;padding-bottom:1px;
-    transition:border-color .25s ease, opacity .25s ease;
-  }
+    transition:border-color .25s ease, opacity .25s ease}
   nav a:hover{border-bottom-color:#fff}
   nav a.on{border-bottom-color:#fff;opacity:1}
 </style>
 </head>
 <body>
+<img class="bg" src="/photos/canyon.jpg" alt="">
 <canvas id="c"></canvas>
 <nav>
   <a href="/">redwood</a>
@@ -37,13 +35,27 @@
 </nav>
 <script>
 (() => {
+  const SPAWN_RATE   = 0.55;
+  const MAX_FLAKES   = 220;
+  const FALL_MIN     = 18;
+  const FALL_MAX     = 42;
+  const PEG_ROWS     = 18;
+  const KICK_PX      = 6;
+  const FLAKE_R_MIN  = 0.6;
+  const FLAKE_R_MAX  = 1.8;
+  const FLAKE_ALPHA  = 0.55;
+  const TRAIL_FADE   = 0.06;
+  const PILE_ALPHA   = 0.018;
+  const PILE_SIGMA   = 1.6;
+  const PILE_DECAY   = 0.0008;
+  const PILE_BASE_H  = 6;
+
   const cvs = document.getElementById('c');
   const ctx = cvs.getContext('2d');
-  let W=0, H=0, DPR=Math.min(window.devicePixelRatio||1, 2);
+  const pile = document.createElement('canvas');
+  const pctx = pile.getContext('2d');
 
-  const SPAWN_RATE = 0.35;
-  const MAX_FLAKES = 180;
-  const TRAIL_FADE = 0.035;
+  let W=0,H=0,DPR=1;
   const flakes = [];
 
   function resize(){

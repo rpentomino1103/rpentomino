@@ -1,16 +1,3 @@
-It looks like you’ve inadvertently pasted the code for your `index.html` file—the Conway's Game of Life engine driving your r-pentomino seed. Because that script mathematically evaluates a cellular automaton grid rather than a descending particle system, it won't produce the Galton board effect. 
-
-However, the design intent is clear: you want the underlying binomial physics of the Galton board we built for `canyon.html` to inherit the ethereal, translucent visual aesthetic of your Game of Life script. 
-
-To execute this, I've engineered a hybrid solution. This script utilizes the discrete stochastic routing required for the Galton board, but completely replaces the solid rendering with the time-shifted icy blue color gradients, trailing alpha fades, and soft radial emissions from your main page. 
-
-To ensure the bottom accumulation remains highly performant, I've swapped the expensive pixel-reading loop for a `Float32Array` that independently tracks the surface topography. This allows the translucent pile to organically stack and melt without bogging down the CPU.
-
-### The Soft Galton Replacement
-
-Overwrite the entirety of your `canyon.html` file with this code block:
-
-```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -222,4 +209,3 @@ Overwrite the entirety of your `canyon.html` file with this code block:
 </script>
 </body>
 </html>
-```

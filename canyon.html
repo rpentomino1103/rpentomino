@@ -1,3 +1,16 @@
+To achieve that suspended, ethereal aesthetic while making the entire central axis track the cursor, we need to fundamentally restructure the architecture. 
+
+In the previous iteration, flakes stored an absolute `x` coordinate. If you moved the cursor, only the *new* flakes spawned at the new location, creating a slanted, broken stream rather than a cohesive, shifting bell curve. 
+
+To fix this, I have engineered a decoupled coordinate system. The flakes now track their **binomial offset** (the net result of their Galton left/right kicks) entirely independent of their spatial anchor. We then bind that spatial anchor to a smoothly interpolated cursor position. 
+
+The result is that the entire Gaussian cloud—including the flakes already in mid-air—will fluidly sweep back and forth like a shaft of illuminated dust motes moving across the canyon floor, without ever breaking the underlying mathematics of the Galton distribution. The deposited accumulation remains fixed to the ground where it lands.
+
+### The Upgraded Engine
+
+I've also slashed the vertical velocity, drastically lowered the alpha boundaries, and mapped the palette to golden-hour sandstone and deep terracotta. Overwrite `canyon.html` with this execution:
+
+```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -35,33 +48,33 @@
 </nav>
 <script>
 (() => {
-  // --- KINETIC & VISUAL PARAMETERS ---
+  // --- KINETIC & AESTHETIC PARAMETERS ---
 
-  const SPAWN_RATE   = 0.15; // Extremely sparse
-  const MAX_FLAKES   = 150;  
+  const SPAWN_RATE   = 0.35; 
+  const MAX_FLAKES   = 280;  
   
-  // Nigh-suspended vertical drift
-  const FALL_MIN     = 0.4;  
-  const FALL_MAX     = 1.2;  
+  // Drastically reduced for a suspended, slow-drifting dust effect
+  const FALL_MIN     = 0.15;  
+  const FALL_MAX     = 0.60;  
   
-  // Galton width & granularity
-  const KICK_PX      = 180; 
-  const PEG_ROWS     = 42;   // Increased for smoother, finer branching
+  // High-resolution Galton tuning for a wide, sweeping bell curve
+  const PEG_ROWS     = 60;   
+  const KICK_PX      = 45; 
 
-  const FLAKE_R_MIN  = 1.5;
-  const FLAKE_R_MAX  = 4.5;
+  const FLAKE_R_MIN  = 1.0;
+  const FLAKE_R_MAX  = 3.8;
   
-  // Pushed to the very edge of visibility
-  const TRAIL_FADE   = 0.01; 
-  const PILE_DECAY   = 0.006; 
-  const MELT_RATE    = 0.03;
+  // Barely discernible trail fades to create long, ghostly curtains
+  const TRAIL_FADE   = 0.008; 
+  const PILE_DECAY   = 0.004; 
+  const MELT_RATE    = 0.015;
   
-  const COLOR_FREQ_T = 0.00012;
-  // Canyon-mapped palette: Sunlit sandstone shifting to deep terracotta
-  const WARM = [255, 185, 110]; 
-  const COOL = [210, 85, 45];   
+  const COLOR_FREQ_T = 0.00008;
+  // Mapped specifically to ambient canyon light
+  const WARM = [255, 205, 135]; // Golden hour sunbeam
+  const COOL = [140, 65, 35];   // Deep terracotta shadow
 
-  // --- STATE TRACKING ---
+  // --- ENGINE STATE ---
 
   const cvs = document.getElementById('c');
   const ctx = cvs.getContext('2d');
@@ -72,8 +85,10 @@
   let surfaceHeights = new Float32Array(0);
   const flakes = [];
   
-  // Track cursor for dynamic Galton origin
+  // Smoothly interpolated anchor coordinates
   let targetX = window.innerWidth / 2;
+  let currentAnchorX = targetX;
+
   window.addEventListener('mousemove', (e) => targetX = e.clientX);
   window.addEventListener('touchstart', (e) => targetX = e.touches[0].clientX);
   window.addEventListener('touchmove', (e) => targetX = e.touches[0].clientX);
@@ -82,7 +97,10 @@
     W = window.innerWidth;
     H = window.innerHeight;
     DPR = Math.min(window.devicePixelRatio || 1, 2);
-    if (!targetX) targetX = W / 2; // Safety fallback
+    if (!targetX) {
+      targetX = W / 2;
+      currentAnchorX = W / 2;
+    }
     
     cvs.width = W * DPR;
     cvs.height = H * DPR;
@@ -114,7 +132,7 @@
   function spawn() {
     if (flakes.length >= MAX_FLAKES) return;
     flakes.push({
-      x: targetX, // Particles now drop dynamically from your cursor's X axis
+      offset: 0, // Divorced from absolute X space
       y: -10,
       vy: FALL_MIN + Math.random() * (FALL_MAX - FALL_MIN),
       r: FLAKE_R_MIN + Math.random() * (FLAKE_R_MAX - FLAKE_R_MIN),
@@ -123,25 +141,28 @@
   }
 
   function depositToPile(x, y, r, rgb) {
-    const radius = r * 5; 
+    const radius = r * 6; 
     const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
     // Barely perceivable base accumulation
-    grad.addColorStop(0, `rgba(${rgb}, 0.002)`); 
+    grad.addColorStop(0, `rgba(${rgb}, 0.0015)`); 
     grad.addColorStop(1, `rgba(${rgb}, 0)`);
     pctx.fillStyle = grad;
     pctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
 
-    const spread = Math.floor(r * 2.5);
+    const spread = Math.floor(r * 3.5);
     for (let i = -spread; i <= spread; i++) {
       const ix = Math.floor(x) + i;
       if (ix >= 0 && ix < W) {
-        const drop = (r * 0.15) * Math.exp(-(i * i) / (spread * spread / 4));
+        const drop = (r * 0.08) * Math.exp(-(i * i) / (spread * spread / 4));
         surfaceHeights[ix] = Math.max(0, surfaceHeights[ix] - drop);
       }
     }
   }
 
   function update(dt, now) {
+    // Smoothly drag the central axis toward the cursor
+    currentAnchorX += (targetX - currentAnchorX) * (dt * 3);
+    
     const rowHeight = H / PEG_ROWS;
     const rgb = colorAt(now);
 
@@ -159,15 +180,18 @@
       
       if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
         const direction = Math.random() < 0.5 ? -1 : 1;
-        f.x += direction * KICK_PX; 
+        // Update the isolated offset rather than an absolute coordinate
+        f.offset += direction * KICK_PX; 
         f.lastRow = currentRow;
       }
 
-      const ix = Math.max(0, Math.min(W - 1, Math.floor(f.x)));
+      // Re-bind to the dynamic anchor for collision testing
+      const actualX = currentAnchorX + f.offset;
+      const ix = Math.max(0, Math.min(W - 1, Math.floor(actualX)));
       const surfaceY = surfaceHeights[ix];
       
       if (f.y + f.r >= surfaceY) {
-        depositToPile(f.x, surfaceY, f.r, rgb);
+        depositToPile(actualX, surfaceY, f.r, rgb);
         flakes.splice(i, 1);
       }
     }
@@ -186,20 +210,20 @@
 
     const rgb = colorAt(now);
 
+    ctx.globalCompositeOperation = 'lighter';
     for (const f of flakes) {
-      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 2);
-      // Ghostly translucency for the descending particles
-      grad.addColorStop(0, `rgba(${rgb}, 0.02)`);  
-      grad.addColorStop(0.3, `rgba(${rgb}, 0.005)`); 
+      const actualX = currentAnchorX + f.offset;
+      const grad = ctx.createRadialGradient(actualX, f.y, 0, actualX, f.y, f.r * 2.5);
+      
+      // Hyper-translucent core mimicking suspended illumination
+      grad.addColorStop(0, `rgba(${rgb}, 0.012)`);  
+      grad.addColorStop(0.3, `rgba(${rgb}, 0.003)`); 
       grad.addColorStop(1, `rgba(${rgb}, 0)`);
       
-      // We switch to 'lighter' blend mode here to give them an incandescent, dust-mote glow 
-      // without artificially increasing their raw alpha.
-      ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = grad;
-      ctx.fillRect(f.x - f.r * 2, f.y - f.r * 2, f.r * 4, f.r * 4);
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillRect(actualX - f.r * 2.5, f.y - f.r * 2.5, f.r * 5, f.r * 5);
     }
+    ctx.globalCompositeOperation = 'source-over';
 
     ctx.drawImage(pile, 0, 0, W, H);
   }
@@ -222,3 +246,4 @@
 </script>
 </body>
 </html>
+```

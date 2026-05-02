@@ -51,16 +51,45 @@
   const PILE_BASE_H  = 6;
 
   const cvs = document.getElementById('c');
-  const ctx = cvs.getContext('2d');
+  // willReadFrequently optimizes the getImageData calls in pileSurfaceY
+  const ctx = cvs.getContext('2d', { willReadFrequently: true });
   const pile = document.createElement('canvas');
-  const pctx = pile.getContext('2d');
+  const pctx = pile.getContext('2d', { willReadFrequently: true });
 
-  let W=0,H=0,DPR=1;
+  let W=0, H=0, DPR=1;
   const flakes = [];
 
-  function resize(){
-    DPR = Math.min(window.devicePixelRatio||1, 2);
-    function pileSurfaceY(x) {
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    
+    cvs.width = W * DPR;
+    cvs.height = H * DPR;
+    pile.width = W * DPR;
+    pile.height = H * DPR;
+    
+    ctx.scale(DPR, DPR);
+    pctx.scale(DPR, DPR);
+  }
+
+  // Initialize dimensions
+  window.addEventListener('resize', resize);
+  resize();
+
+  function spawn() {
+    if (flakes.length >= MAX_FLAKES) return;
+    flakes.push({
+      x: W / 2, // Drop exactly from the center for the Galton bell curve
+      y: -10,
+      vy: FALL_MIN + Math.random() * (FALL_MAX - FALL_MIN),
+      r: FLAKE_R_MIN + Math.random() * (FLAKE_R_MAX - FLAKE_R_MIN),
+      a: 0.5 + Math.random() * 0.5,
+      lastRow: -1 // State lock for discrete kicks
+    });
+  }
+
+  function pileSurfaceY(x) {
     const px = Math.max(0, Math.min(pile.width - 1, Math.floor(x * DPR)));
     const data = pctx.getImageData(px, 0, 1, pile.height).data;
     for (let y = 0; y < pile.height; y++) {
@@ -78,6 +107,32 @@
     pctx.beginPath();
     pctx.arc(x, y, radius, 0, Math.PI * 2);
     pctx.fill();
+  }
+
+  function update(dt) {
+    const rowHeight = H / PEG_ROWS;
+    
+    for (let i = flakes.length - 1; i >= 0; i--) {
+      const f = flakes[i];
+      // Normalize to ~60fps movement so your fallback variables work perfectly
+      f.y += f.vy * dt * 60; 
+
+      const currentRow = Math.floor(f.y / rowHeight);
+      
+      // Galton Execution: Apply B(n, p) lateral kick exactly once per tier
+      if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        f.x += direction * KICK_PX;
+        f.lastRow = currentRow;
+      }
+
+      // Check collision with the accumulating pile
+      const surfaceY = pileSurfaceY(f.x);
+      if (f.y + f.r >= surfaceY) {
+        depositToPile(f.x, surfaceY, f.r);
+        flakes.splice(i, 1);
+      }
+    }
   }
 
   function draw() {
@@ -105,12 +160,16 @@
   function loop(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    
     if (Math.random() < SPAWN_RATE) spawn();
     if (Math.random() < SPAWN_RATE) spawn();
+    
     update(dt);
     draw();
+    
     requestAnimationFrame(loop);
   }
+  
   requestAnimationFrame(loop);
 })();
 </script>

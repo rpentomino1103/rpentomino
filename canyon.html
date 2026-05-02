@@ -35,26 +35,28 @@
 </nav>
 <script>
 (() => {
-  // --- MODIFIED PARAMETERS FOR SUBTLE SNOWFALL ---
+  // --- MODIFIED PARAMETERS FOR ULTRA-SUBTLE, WIDE-DRIFT SNOW ---
 
-  // SPAWN_RATE: Higher allows more 'subtle' flakes without making the scene empty.
-  const SPAWN_RATE   = 0.95; 
-  // MAX_FLAKES: Increased to allow a larger 'cloud' of faint flakes.
-  const MAX_FLAKES   = 600; 
-  // FALL velocities: Much lower numbers make it slow.
-  const FALL_MIN     = 6;  // Slowed from 20
-  const FALL_MAX     = 14; // Slowed from 45
-  const PEG_ROWS     = 22;
-  // KICK_PX: Larger number means wider branching, wider final distribution.
-  const KICK_PX      = 22; // Widened from 7
+  // SPAWN_RATE: Very low to allow only scattered flakes.
+  const SPAWN_RATE   = 0.2; 
+  // MAX_FLAKES: Lowered to keep the cloud extremely sparse.
+  const MAX_FLAKES   = 200; 
+  // FALL velocities: Drastically lower to mimic drifting snow.
+  const FALL_MIN     = 1.5; // Drifted down from 6
+  const FALL_MAX     = 3;   // Drifted down from 14
+  // KICK_PX: Crucial. This defines the lateral spread at each peg row. 
+  // Increased 10x from 22 for a normal curve that covers the full screen.
+  const KICK_PX      = 220; 
+  // PEG_ROWS: Increased to help smooth out the large jumps and increase variance.
+  const PEG_ROWS     = 32;
 
-  // Visual Porting ( ported from Redwood script but significantly softened )
-  const FLAKE_R_MIN  = 1.5;
-  const FLAKE_R_MAX  = 4.5;
-  // TRAIL_FADE: A lower number here results in longer, fainter trails.
-  const TRAIL_FADE   = 0.04; // Softened from 0.10
-  // PILE_DECAY: A slightly higher number prevents large pile build-up, making it 'barely discernible'.
-  const PILE_DECAY   = 0.004; // Increased from 0.0015
+  // Visual Porting ( softened from Redwood script, then made barely visible )
+  const FLAKE_R_MIN  = 1.2;
+  const FLAKE_R_MAX  = 3;
+  // TRAIL_FADE: Extremely low to create long, barely discernible trails.
+  const TRAIL_FADE   = 0.02; 
+  // PILE_DECAY: Higher to ensure almost immediate pile removal, making it 'barely discernible'.
+  const PILE_DECAY   = 0.008; 
   const MELT_RATE    = 0.06;
   const COLOR_FREQ_T = 0.00018;
   const WARM = [170, 225, 235];
@@ -106,7 +108,7 @@
   function spawn() {
     if (flakes.length >= MAX_FLAKES) return;
     flakes.push({
-      x: W / 2,
+      x: W / 2, // Spawns centralized, wide Galton drift.
       y: -10,
       vy: FALL_MIN + Math.random() * (FALL_MAX - FALL_MIN),
       r: FLAKE_R_MIN + Math.random() * (FLAKE_R_MAX - FLAKE_R_MIN),
@@ -118,8 +120,8 @@
     // 1. Visual Accumulation (Much Fainter Soft Gradient)
     const radius = r * 4; 
     const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
-    // Modified: reduced initial alpha stop from 0.2 to 0.015 for much higher translucency
-    grad.addColorStop(0, `rgba(${rgb}, 0.015)`); 
+    // Modified: reduced initial alpha stop for much higher translucency
+    grad.addColorStop(0, `rgba(${rgb}, 0.004)`); 
     grad.addColorStop(1, `rgba(${rgb}, 0)`);
     pctx.fillStyle = grad;
     pctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
@@ -129,7 +131,6 @@
     for (let i = -spread; i <= spread; i++) {
       const ix = Math.floor(x) + i;
       if (ix >= 0 && ix < W) {
-        // Reduced 'drop' value to prevent a steep physical pile
         const drop = (r * 0.25) * Math.exp(-(i * i) / (spread * spread / 4));
         surfaceHeights[ix] = Math.max(0, surfaceHeights[ix] - drop);
       }
@@ -148,13 +149,15 @@
     
     for (let i = flakes.length - 1; i >= 0; i--) {
       const f = flakes[i];
+      // Normalize to standard fps for these low fall values to be accurate.
       f.y += f.vy * dt * 60; 
 
       const currentRow = Math.floor(f.y / rowHeight);
       
       if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
         const direction = Math.random() < 0.5 ? -1 : 1;
-        f.x += direction * KICK_PX;
+        // Large kick applies to a normal distribution and drifts wide.
+        f.x += direction * KICK_PX; 
         f.lastRow = currentRow;
       }
 
@@ -187,8 +190,8 @@
     for (const f of flakes) {
       const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 1.5);
       // Modified: significantly reduced alpha stops to make flakes 'barely discernible'
-      grad.addColorStop(0, `rgba(${rgb}, 0.12)`);   // Reduced from 0.8
-      grad.addColorStop(0.5, `rgba(${rgb}, 0.03)`); // Reduced from 0.3
+      grad.addColorStop(0, `rgba(${rgb}, 0.05)`);   // Extremely faint core
+      grad.addColorStop(0.5, `rgba(${rgb}, 0.01)`); // Dims almost immediately
       grad.addColorStop(1, `rgba(${rgb}, 0)`);
       ctx.fillStyle = grad;
       ctx.fillRect(f.x - f.r * 1.5, f.y - f.r * 1.5, f.r * 3, f.r * 3);
@@ -203,8 +206,7 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     
-    // Increased spawn events slightly to populate the fainter cloud
-    if (Math.random() < SPAWN_RATE) spawn();
+    // Spawn sparsely.
     if (Math.random() < SPAWN_RATE) spawn();
     
     update(dt, now);

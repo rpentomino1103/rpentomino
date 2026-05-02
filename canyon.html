@@ -1,3 +1,16 @@
+It looks like you’ve inadvertently pasted the code for your `index.html` file—the Conway's Game of Life engine driving your r-pentomino seed. Because that script mathematically evaluates a cellular automaton grid rather than a descending particle system, it won't produce the Galton board effect. 
+
+However, the design intent is clear: you want the underlying binomial physics of the Galton board we built for `canyon.html` to inherit the ethereal, translucent visual aesthetic of your Game of Life script. 
+
+To execute this, I've engineered a hybrid solution. This script utilizes the discrete stochastic routing required for the Galton board, but completely replaces the solid rendering with the time-shifted icy blue color gradients, trailing alpha fades, and soft radial emissions from your main page. 
+
+To ensure the bottom accumulation remains highly performant, I've swapped the expensive pixel-reading loop for a `Float32Array` that independently tracks the surface topography. This allows the translucent pile to organically stack and melt without bogging down the CPU.
+
+### The Soft Galton Replacement
+
+Overwrite the entirety of your `canyon.html` file with this code block:
+
+```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -35,28 +48,31 @@
 </nav>
 <script>
 (() => {
-  const SPAWN_RATE   = 0.55;
-  const MAX_FLAKES   = 220;
-  const FALL_MIN     = 18;
-  const FALL_MAX     = 42;
-  const PEG_ROWS     = 18;
-  const KICK_PX      = 6;
-  const FLAKE_R_MIN  = 0.6;
-  const FLAKE_R_MAX  = 1.8;
-  const FLAKE_ALPHA  = 0.55;
-  const TRAIL_FADE   = 0.06;
-  const PILE_ALPHA   = 0.018;
-  const PILE_SIGMA   = 1.6;
-  const PILE_DECAY   = 0.0008;
-  const PILE_BASE_H  = 6;
+  // Kinetic / Galton Parameters
+  const SPAWN_RATE   = 0.65;
+  const MAX_FLAKES   = 350;
+  const FALL_MIN     = 20;
+  const FALL_MAX     = 45;
+  const PEG_ROWS     = 22;
+  const KICK_PX      = 7;
+  
+  // Visuals ported from Game of Life script
+  const FLAKE_R_MIN  = 1.5;
+  const FLAKE_R_MAX  = 4.5;
+  const TRAIL_FADE   = 0.10;
+  const PILE_DECAY   = 0.0015;
+  const MELT_RATE    = 0.08; 
+  const COLOR_FREQ_T = 0.00018;
+  const WARM = [170, 225, 235];
+  const COOL = [195, 215, 240];
 
   const cvs = document.getElementById('c');
-  // willReadFrequently optimizes the getImageData calls in pileSurfaceY
-  const ctx = cvs.getContext('2d', { willReadFrequently: true });
+  const ctx = cvs.getContext('2d');
   const pile = document.createElement('canvas');
-  const pctx = pile.getContext('2d', { willReadFrequently: true });
+  const pctx = pile.getContext('2d');
 
   let W=0, H=0, DPR=1;
+  let surfaceHeights = new Float32Array(0);
   const flakes = [];
 
   function resize() {
@@ -71,88 +87,119 @@
     
     ctx.scale(DPR, DPR);
     pctx.scale(DPR, DPR);
-  }
 
-  // Initialize dimensions
+    // Retain existing topography on resize
+    const oldHeights = surfaceHeights;
+    surfaceHeights = new Float32Array(W);
+    for(let i = 0; i < W; i++) {
+       surfaceHeights[i] = (i < oldHeights.length) ? Math.min(oldHeights[i], H - 10) : H - 10;
+    }
+  }
   window.addEventListener('resize', resize);
   resize();
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  
+  function colorAt(now) {
+    const m = 0.5 + 0.5 * Math.sin(now * COLOR_FREQ_T * 6.283);
+    const r = Math.round(lerp(WARM[0], COOL[0], m));
+    const g = Math.round(lerp(WARM[1], COOL[1], m));
+    const b = Math.round(lerp(WARM[2], COOL[2], m));
+    return `${r},${g},${b}`;
+  }
 
   function spawn() {
     if (flakes.length >= MAX_FLAKES) return;
     flakes.push({
-      x: W / 2, // Drop exactly from the center for the Galton bell curve
+      x: W / 2,
       y: -10,
       vy: FALL_MIN + Math.random() * (FALL_MAX - FALL_MIN),
       r: FLAKE_R_MIN + Math.random() * (FLAKE_R_MAX - FLAKE_R_MIN),
-      a: 0.5 + Math.random() * 0.5,
-      lastRow: -1 // State lock for discrete kicks
+      lastRow: -1
     });
   }
 
-  function pileSurfaceY(x) {
-    const px = Math.max(0, Math.min(pile.width - 1, Math.floor(x * DPR)));
-    const data = pctx.getImageData(px, 0, 1, pile.height).data;
-    for (let y = 0; y < pile.height; y++) {
-      if (data[y * 4 + 3] > 40) return y / DPR;
-    }
-    return H - PILE_BASE_H;
-  }
-
-  function depositToPile(x, y, r) {
-    const radius = r * PILE_SIGMA * 3;
+  function depositToPile(x, y, r, rgb) {
+    // 1. Visual Accumulation (Soft Gradient)
+    const radius = r * 4; 
     const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
-    grad.addColorStop(0, 'rgba(235,240,255,' + (PILE_ALPHA * 4) + ')');
-    grad.addColorStop(1, 'rgba(235,240,255,0)');
+    grad.addColorStop(0, `rgba(${rgb}, 0.2)`);
+    grad.addColorStop(1, `rgba(${rgb}, 0)`);
     pctx.fillStyle = grad;
-    pctx.beginPath();
-    pctx.arc(x, y, radius, 0, Math.PI * 2);
-    pctx.fill();
+    pctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+    // 2. Physical Topography Update (Gaussian Drop)
+    const spread = Math.floor(r * 2.5);
+    for (let i = -spread; i <= spread; i++) {
+      const ix = Math.floor(x) + i;
+      if (ix >= 0 && ix < W) {
+        const drop = (r * 0.35) * Math.exp(-(i * i) / (spread * spread / 4));
+        surfaceHeights[ix] = Math.max(0, surfaceHeights[ix] - drop);
+      }
+    }
   }
 
-  function update(dt) {
+  function update(dt, now) {
     const rowHeight = H / PEG_ROWS;
+    const rgb = colorAt(now);
+
+    // Organically melt the physical surface to match visual decay
+    for (let i = 0; i < W; i++) {
+      if (surfaceHeights[i] < H - 10) {
+        surfaceHeights[i] = Math.min(H - 10, surfaceHeights[i] + MELT_RATE * dt * 60);
+      }
+    }
     
     for (let i = flakes.length - 1; i >= 0; i--) {
       const f = flakes[i];
-      // Normalize to ~60fps movement so your fallback variables work perfectly
       f.y += f.vy * dt * 60; 
 
       const currentRow = Math.floor(f.y / rowHeight);
       
-      // Galton Execution: Apply B(n, p) lateral kick exactly once per tier
+      // The Galton Kick
       if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
         const direction = Math.random() < 0.5 ? -1 : 1;
         f.x += direction * KICK_PX;
         f.lastRow = currentRow;
       }
 
-      // Check collision with the accumulating pile
-      const surfaceY = pileSurfaceY(f.x);
+      // Fast topography check
+      const ix = Math.max(0, Math.min(W - 1, Math.floor(f.x)));
+      const surfaceY = surfaceHeights[ix];
+      
       if (f.y + f.r >= surfaceY) {
-        depositToPile(f.x, surfaceY, f.r);
+        depositToPile(f.x, surfaceY, f.r, rgb);
         flakes.splice(i, 1);
       }
     }
   }
 
-  function draw() {
+  function draw(now) {
+    // Render Trail Fades
     ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = 'rgba(0,0,0,' + TRAIL_FADE + ')';
+    ctx.fillStyle = `rgba(0,0,0,${TRAIL_FADE})`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'source-over';
 
+    // Render Pile Decay
     pctx.globalCompositeOperation = 'destination-out';
-    pctx.fillStyle = 'rgba(0,0,0,' + PILE_DECAY + ')';
+    pctx.fillStyle = `rgba(0,0,0,${PILE_DECAY})`;
     pctx.fillRect(0, 0, W, H);
     pctx.globalCompositeOperation = 'source-over';
 
+    const rgb = colorAt(now);
+
+    // Draw Soft Orbs
     for (const f of flakes) {
-      ctx.beginPath();
-      ctx.fillStyle = 'rgba(240,245,255,' + (FLAKE_ALPHA * f.a) + ')';
-      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-      ctx.fill();
+      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 1.5);
+      grad.addColorStop(0, `rgba(${rgb}, 0.8)`);
+      grad.addColorStop(0.5, `rgba(${rgb}, 0.3)`);
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(f.x - f.r * 1.5, f.y - f.r * 1.5, f.r * 3, f.r * 3);
     }
 
+    // Composite layers
     ctx.drawImage(pile, 0, 0, W, H);
   }
 
@@ -164,8 +211,8 @@
     if (Math.random() < SPAWN_RATE) spawn();
     if (Math.random() < SPAWN_RATE) spawn();
     
-    update(dt);
-    draw();
+    update(dt, now);
+    draw(now);
     
     requestAnimationFrame(loop);
   }
@@ -175,3 +222,4 @@
 </script>
 </body>
 </html>
+```

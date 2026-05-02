@@ -35,34 +35,33 @@
 </nav>
 <script>
 (() => {
-  // --- MODIFIED PARAMETERS FOR ULTRA-SUBTLE, WIDE-DRIFT SNOW ---
+  // --- KINETIC & VISUAL PARAMETERS ---
 
-  // SPAWN_RATE: Very low to allow only scattered flakes.
-  const SPAWN_RATE   = 0.2; 
-  // MAX_FLAKES: Lowered to keep the cloud extremely sparse.
-  const MAX_FLAKES   = 200; 
-  // FALL velocities: Drastically lower to mimic drifting snow.
-  const FALL_MIN     = 1.5; // Drifted down from 6
-  const FALL_MAX     = 3;   // Drifted down from 14
-  // KICK_PX: Crucial. This defines the lateral spread at each peg row. 
-  // Increased 10x from 22 for a normal curve that covers the full screen.
-  const KICK_PX      = 220; 
-  // PEG_ROWS: Increased to help smooth out the large jumps and increase variance.
-  const PEG_ROWS     = 32;
+  const SPAWN_RATE   = 0.15; // Extremely sparse
+  const MAX_FLAKES   = 150;  
+  
+  // Nigh-suspended vertical drift
+  const FALL_MIN     = 0.4;  
+  const FALL_MAX     = 1.2;  
+  
+  // Galton width & granularity
+  const KICK_PX      = 180; 
+  const PEG_ROWS     = 42;   // Increased for smoother, finer branching
 
-  // Visual Porting ( softened from Redwood script, then made barely visible )
-  const FLAKE_R_MIN  = 1.2;
-  const FLAKE_R_MAX  = 3;
-  // TRAIL_FADE: Extremely low to create long, barely discernible trails.
-  const TRAIL_FADE   = 0.02; 
-  // PILE_DECAY: Higher to ensure almost immediate pile removal, making it 'barely discernible'.
-  const PILE_DECAY   = 0.008; 
-  const MELT_RATE    = 0.06;
-  const COLOR_FREQ_T = 0.00018;
-  const WARM = [170, 225, 235];
-  const COOL = [195, 215, 240];
+  const FLAKE_R_MIN  = 1.5;
+  const FLAKE_R_MAX  = 4.5;
+  
+  // Pushed to the very edge of visibility
+  const TRAIL_FADE   = 0.01; 
+  const PILE_DECAY   = 0.006; 
+  const MELT_RATE    = 0.03;
+  
+  const COLOR_FREQ_T = 0.00012;
+  // Canyon-mapped palette: Sunlit sandstone shifting to deep terracotta
+  const WARM = [255, 185, 110]; 
+  const COOL = [210, 85, 45];   
 
-  // --- REST OF THE SCRIPT (Core Logic) ---
+  // --- STATE TRACKING ---
 
   const cvs = document.getElementById('c');
   const ctx = cvs.getContext('2d');
@@ -72,11 +71,18 @@
   let W=0, H=0, DPR=1;
   let surfaceHeights = new Float32Array(0);
   const flakes = [];
+  
+  // Track cursor for dynamic Galton origin
+  let targetX = window.innerWidth / 2;
+  window.addEventListener('mousemove', (e) => targetX = e.clientX);
+  window.addEventListener('touchstart', (e) => targetX = e.touches[0].clientX);
+  window.addEventListener('touchmove', (e) => targetX = e.touches[0].clientX);
 
   function resize() {
     W = window.innerWidth;
     H = window.innerHeight;
     DPR = Math.min(window.devicePixelRatio || 1, 2);
+    if (!targetX) targetX = W / 2; // Safety fallback
     
     cvs.width = W * DPR;
     cvs.height = H * DPR;
@@ -108,7 +114,7 @@
   function spawn() {
     if (flakes.length >= MAX_FLAKES) return;
     flakes.push({
-      x: W / 2, // Spawns centralized, wide Galton drift.
+      x: targetX, // Particles now drop dynamically from your cursor's X axis
       y: -10,
       vy: FALL_MIN + Math.random() * (FALL_MAX - FALL_MIN),
       r: FLAKE_R_MIN + Math.random() * (FLAKE_R_MAX - FLAKE_R_MIN),
@@ -117,21 +123,19 @@
   }
 
   function depositToPile(x, y, r, rgb) {
-    // 1. Visual Accumulation (Much Fainter Soft Gradient)
-    const radius = r * 4; 
+    const radius = r * 5; 
     const grad = pctx.createRadialGradient(x, y, 0, x, y, radius);
-    // Modified: reduced initial alpha stop for much higher translucency
-    grad.addColorStop(0, `rgba(${rgb}, 0.004)`); 
+    // Barely perceivable base accumulation
+    grad.addColorStop(0, `rgba(${rgb}, 0.002)`); 
     grad.addColorStop(1, `rgba(${rgb}, 0)`);
     pctx.fillStyle = grad;
     pctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
 
-    // 2. Physical Topography Update (Gaussian Drop - Reduced Impact)
     const spread = Math.floor(r * 2.5);
     for (let i = -spread; i <= spread; i++) {
       const ix = Math.floor(x) + i;
       if (ix >= 0 && ix < W) {
-        const drop = (r * 0.25) * Math.exp(-(i * i) / (spread * spread / 4));
+        const drop = (r * 0.15) * Math.exp(-(i * i) / (spread * spread / 4));
         surfaceHeights[ix] = Math.max(0, surfaceHeights[ix] - drop);
       }
     }
@@ -149,14 +153,12 @@
     
     for (let i = flakes.length - 1; i >= 0; i--) {
       const f = flakes[i];
-      // Normalize to standard fps for these low fall values to be accurate.
       f.y += f.vy * dt * 60; 
 
       const currentRow = Math.floor(f.y / rowHeight);
       
       if (currentRow > f.lastRow && currentRow < PEG_ROWS) {
         const direction = Math.random() < 0.5 ? -1 : 1;
-        // Large kick applies to a normal distribution and drifts wide.
         f.x += direction * KICK_PX; 
         f.lastRow = currentRow;
       }
@@ -172,13 +174,11 @@
   }
 
   function draw(now) {
-    // Render Trail Fades
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = `rgba(0,0,0,${TRAIL_FADE})`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Render Pile Decay
     pctx.globalCompositeOperation = 'destination-out';
     pctx.fillStyle = `rgba(0,0,0,${PILE_DECAY})`;
     pctx.fillRect(0, 0, W, H);
@@ -186,18 +186,21 @@
 
     const rgb = colorAt(now);
 
-    // Draw Soft Orbs (porting the Redwood translucent look)
     for (const f of flakes) {
-      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 1.5);
-      // Modified: significantly reduced alpha stops to make flakes 'barely discernible'
-      grad.addColorStop(0, `rgba(${rgb}, 0.05)`);   // Extremely faint core
-      grad.addColorStop(0.5, `rgba(${rgb}, 0.01)`); // Dims almost immediately
+      const grad = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 2);
+      // Ghostly translucency for the descending particles
+      grad.addColorStop(0, `rgba(${rgb}, 0.02)`);  
+      grad.addColorStop(0.3, `rgba(${rgb}, 0.005)`); 
       grad.addColorStop(1, `rgba(${rgb}, 0)`);
+      
+      // We switch to 'lighter' blend mode here to give them an incandescent, dust-mote glow 
+      // without artificially increasing their raw alpha.
+      ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = grad;
-      ctx.fillRect(f.x - f.r * 1.5, f.y - f.r * 1.5, f.r * 3, f.r * 3);
+      ctx.fillRect(f.x - f.r * 2, f.y - f.r * 2, f.r * 4, f.r * 4);
+      ctx.globalCompositeOperation = 'source-over';
     }
 
-    // Composite layers
     ctx.drawImage(pile, 0, 0, W, H);
   }
 
@@ -206,7 +209,6 @@
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     
-    // Spawn sparsely.
     if (Math.random() < SPAWN_RATE) spawn();
     
     update(dt, now);

@@ -57,7 +57,6 @@
   const PILE_REST_ROT    = 0.50;      // ±~28° random rotation per pile glyph (junk-pile feel)
   const PILE_ALPHA       = 0.92;      // pile glyphs are opaque-feeling solid clippings
   const PILE_STROKE_ALPHA= 0.75;      // dark stroke around pile glyph text for definition
-  const PILE_BACKING_ALPHA=0.42;      // soft dark "paper" backing under each pile glyph
   const PILE_X_JITTER    = 0.55;      // fraction of pitch
   const STACK_STEP       = 13;        // typical stack increment in px (similar to FONT_PX)
   const STACK_VARIANCE   = 4;         // ± px noise per stack so heights vary
@@ -350,12 +349,24 @@
     return 0.5 - 0.5*Math.cos(t*Math.PI);
   }
 
-  // The vertical y at which a flake "rests" when it lands in bin b — top of stack.
-  function restingYFor(b){
-    const top = (b.glyphs.length === 0)
-      ? binBaseY
-      : (b.glyphs[b.glyphs.length-1].y - STACK_STEP - (Math.random()*2-1)*STACK_VARIANCE);
-    return top;
+  // The vertical y at which a flake "rests" when it lands at absolute x = px.
+  // Spatial: look across the entire pile for the highest existing glyph within a
+  // ~STACK_STEP-wide horizontal neighborhood of px, and rest one stack-step above it.
+  // This way the heap accumulates SPATIALLY (cursor sweeps build a wide drift), and
+  // committed pile glyphs are never moved or mutated again.
+  function restingYFor(px){
+    let topY = binBaseY;
+    const radius = STACK_STEP * 1.25;
+    for (let bi=0; bi<bins.length; bi++){
+      const gs = bins[bi].glyphs;
+      for (let j=gs.length-1; j>=0; j--){
+        const gd = gs[j];
+        if (Math.abs(gd.x - px) <= radius && gd.y < topY){
+          topY = gd.y;
+        }
+      }
+    }
+    return topY - STACK_STEP - (Math.random()*2-1)*STACK_VARIANCE;
   }
 
   // ---------- Physics ----------
@@ -373,9 +384,10 @@
         // Constant-velocity descent at the flake's existing fall speed — no acceleration spike,
         // no gravity. The flake just keeps falling at vy until it hits the resting y for the bin.
         g.y += g.vy * dt;
-        // Resolve resting target each step (the column may grow if many flakes stack quickly)
+        // Resolve resting target each step against the SPATIAL pile (heap may grow as flakes
+        // land near the same absolute x). Pile glyphs themselves are never mutated.
         const b = bins[g.pileBin];
-        const restY = restingYFor(b);
+        const restY = restingYFor(g.pileX);
         if (g.y >= restY){
           g.y = restY;
           // Commit to pile — capture the flake's CURRENT visual rotation so there's no snap,
@@ -444,16 +456,12 @@
       }
     }
 
-    // Trim pile if any column would grow past the top of the bin region
+    // Pile is IMMUTABLE once landed — never move or rewrite a settled glyph.
+    // Glyphs that have piled up past the top of the screen are simply removed (off-screen).
     for (let bi=0; bi<bins.length; bi++){
-      const b = bins[bi];
-      // Discard from the bottom (oldest) when stack height exceeds limit
-      const maxStack = innerHeight - 120;
-      while (b.glyphs.length && (binBaseY - b.glyphs[b.glyphs.length-1].y) > maxStack){
-        b.glyphs.shift();
-        // re-base remaining stack so it stays anchored to binBaseY (visually shift down)
-        const drop = STACK_STEP;
-        for (let j=0;j<b.glyphs.length;j++) b.glyphs[j].y += drop;
+      const gs = bins[bi].glyphs;
+      for (let j=gs.length-1; j>=0; j--){
+        if (gs[j].y < -40) gs.splice(j, 1);
       }
     }
   }
@@ -498,12 +506,7 @@
         pctx.save();
         pctx.translate(gd.x, gd.y);
         pctx.rotate(gd.rot);
-        // Dark, slightly translucent backing — gives the glyph the silhouette of a torn snippet of paper
-        const tw = pctx.measureText(gd.text).width;
-        const bw = tw + 6, bh = FONT_PX + 4;
-        pctx.fillStyle = 'rgba(0,0,0,' + PILE_BACKING_ALPHA.toFixed(3) + ')';
-        pctx.fillRect(-bw*0.5, -bh*0.5, bw, bh);
-        // Dark stroke around the glyph for crisp legibility against the photo
+        // Just the letters — no rectangular backing. Dark stroke gives definition against the photo.
         pctx.lineWidth = 2.0;
         pctx.strokeStyle = 'rgba(0,0,0,' + PILE_STROKE_ALPHA.toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);

@@ -54,10 +54,10 @@
   const ROT_PERIOD_MIN   = 3.0;
   const ROT_PERIOD_MAX   = 7.0;
 
-  const PILE_REST_ROT    = 0.50;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 0.92;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
+  const PILE_REST_ROT    = 0.75;      // ±~28° random rotation per pile glyph (junk-pile feel)
+  const PILE_ALPHA       = 0.96;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
   const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
-  const PILE_X_JITTER    = 0.55;      // fraction of pitch
+  const PILE_X_JITTER    = 0.95;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
   const SLOPE_THRESHOLD  = 0.5;       // fraction of STACK_STEP that triggers a slide
   const SIDE_PROBE_RADIUS= 2.0;       // multiples of STACK_STEP — left/right neighbor probe distance
@@ -69,9 +69,9 @@
   const STEP_NUDGE_PROB  = 0.40;
   const PLINK_COOLDOWN   = 110;
 
-  const SPAWN_MS_MIN     = 110;       // doubled cadence
-  const SPAWN_MS_MAX     = 260;
-  const MAX_FALLING      = 240;
+  const SPAWN_MS_MIN     = 55;       // doubled cadence
+  const SPAWN_MS_MAX     = 140;
+  const MAX_FALLING      = 340;
   const FADE_IN_MS       = 700;
 
   const CURSOR_TRACK_LERP = 0.06;     // per-frame ease toward cursor x
@@ -101,7 +101,7 @@
   const FONT_SIZE_CODE     = FONT_PX;          // base monospace size
   const FONT_SIZE_MATH     = FONT_PX + 2;      // serif italic at slightly larger size
   const FONT_SIZE_SYMBOL   = FONT_PX + 6;      // ornamental headline tokens
-  const FONT_SIZE_JITTER   = 1.6;              // ± px random size jitter per flake
+  const FONT_SIZE_JITTER   = 5.0;              // ± px random size jitter per flake
 
   // Rare "ghost" drops — every ~1% of spawns we leak a single emoji or a fragment of
   // emoji-laden teen-texting nonsense. They render at lower alpha so they feel ghostly and
@@ -124,6 +124,12 @@
       family = MATH_FONT_FAMILY;   size = FONT_SIZE_MATH;   italic = true;
     }
     size += (Math.random()*2-1) * FONT_SIZE_JITTER;
+    // Chalkboard mixed-scale: occasional 'headline' glyphs are 1.8–2.6x larger,
+    // and a steady 25% of the rest get a -2/+4px secondary jitter so sizes feel
+    // hand-scrawled rather than uniform.
+    const r = Math.random();
+    if (r < 0.12)      size *= (1.8 + Math.random()*0.8);
+    else if (r < 0.37) size += (Math.random()*6 - 2);
     return { family, size, italic };
   }
   function fontCSS(f){ return (f.italic ? "italic " : "") + f.size.toFixed(1) + "px " + f.family; }
@@ -590,14 +596,14 @@
     r = lum + (r - lum) * PHOTO_SAT_BOOST;
     g = lum + (g - lum) * PHOTO_SAT_BOOST;
     b = lum + (b - lum) * PHOTO_SAT_BOOST;
-    // Override: collapse photo color to a near-black dark-gray field so accumulating
-    // glyphs build up the dense, almost-monochrome code-overlay look (variation kept
-    // small so the texture has subtle life, not full uniformity).
-    const baseGray = 26 + (lum * 0.06);            // ~26-42 range, biased by photo luminance
-    const jitter = (Math.random() - 0.5) * 6;      // ±3 px-grade noise per glyph
-    const rr = Math.max(8, Math.min(56, baseGray + jitter + 1));
-    const gg = Math.max(8, Math.min(56, baseGray + jitter));
-    const bb = Math.max(8, Math.min(56, baseGray + jitter + 2));
+    // Chalkboard tone: collapse photo to a chalk-gray range with a faint cool
+    // (blue-white) tint so glyphs read as scrawled chalk on the dark photograph.
+    // Per-glyph luminance jitter is wide so individual marks vary like real chalk.
+    const baseGray = 78 + (lum * 0.12);              // ~78-108 range, biased by photo luminance
+    const jitter = (Math.random() - 0.5) * 36;       // ±18 wide chalk-stroke variation
+    const rr = Math.max(40, Math.min(190, baseGray + jitter - 2));
+    const gg = Math.max(40, Math.min(190, baseGray + jitter));
+    const bb = Math.max(40, Math.min(190, baseGray + jitter + 6));   // gentle cool tint
     return [rr|0, gg|0, bb|0];
   }
 

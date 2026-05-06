@@ -623,7 +623,11 @@
     const fontStr = fontCSS(fontObj);
     const cxSnap = cxBoard;                         // freeze the lattice for this flake
     const x = cxSnap + (Math.random()-0.5)*16;
-    const y = topY - 30 - Math.random()*60;
+    // Spawn y must always be ABOVE the current pile top near the spout, so as the pile
+    // grows up past topY the spout effectively rises with it and flakes never spawn inside the heap.
+    const restAtSpoutY = restingYFor(x);   // y of (just above) highest pile near spout x
+    const spoutY = Math.min(topY, restAtSpoutY);
+    const y = spoutY - 30 - Math.random()*60;
     const vy = FALL_SPEED * (1 + (Math.random()*2-1)*FALL_SPEED_VAR);
     falling.push({
       text, x, y, vy,
@@ -778,6 +782,47 @@
 
       // ---- Free fall + lattice transitions ----
       g.y += g.vy * dt;
+
+      // ---- Continuous pile-surface collision (prevents fall-through across all lattice rows) ----
+      // The Galton lattice happily lets flakes traverse rowY[r] even when the pile has risen above
+      // those rows. Without an extra check, glyphs visibly fall through the heap. So every frame
+      // during free-fall we also test against restingYFor(g.x); if we've crossed the surface we
+      // commit to the pile at the current x immediately.
+      {
+        const restY = restingYFor(g.x);
+        if (g.y >= restY){
+          // figure out which bin's container to push into (spatial, not lattice-index based)
+          let bIdx = 0;
+          let bestDx = Infinity;
+          for (let bi=0; bi<bins.length; bi++){
+            const b = bins[bi];
+            const cx = (b.x0 + b.x1) * 0.5;
+            const dx = Math.abs(cx - g.x);
+            if (dx < bestDx){ bestDx = dx; bIdx = bi; }
+          }
+          const b = bins[bIdx];
+          g.pileBin = bIdx;
+          g.pileX = g.x;
+          g.y = restY;
+          // Commit immediately. Don't bother with the seesaw rotation easing here — use the
+          // current visual rotation as the resting rotation (no orientation snap).
+          const tSec0 = (now - g.birth) * 0.001;
+          const rotNow = Math.sin(tSec0 / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
+          const restRot = rotNow + (Math.random()*2-1) * PILE_REST_ROT;
+          b.glyphs.push({
+            text: g.text,
+            x: g.pileX,
+            y: g.y,
+            rot: restRot,
+            fontStr: g.fontStr,
+            fontSize: g.fontObj.size
+          });
+          if (g.y < b.topY) b.topY = g.y;
+          inUseTexts.delete(g.text);
+          falling.splice(i,1);
+          continue;
+        }
+      }
 
       while (g.nextRow < ROWS && g.y >= rowY[g.nextRow]){
         g.prevAnchorOffX = g.nextAnchorOffX;

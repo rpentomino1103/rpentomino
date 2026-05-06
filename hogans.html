@@ -55,7 +55,12 @@
   const ROT_PERIOD_MAX   = 7.0;
 
   const PILE_REST_ROT    = 0.75;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 1.00;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
+  const PILE_ALPHA       = 1.00;
+  // Etched-pile tunables (decoupled from in-flight GLYPH_ALPHA so falling chalk stays
+  // light/atmospheric while landed chalk is decisively concrete and legible):
+  const PILE_FILL_ALPHA  = 0.62;     // chalk-fill opacity per landed glyph (semi-transparent but readable)
+  const PILE_EDGE_ALPHA  = 0.92;     // tight dark outline — the etched edge
+  const PILE_HALO_ALPHA  = 0.18;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
   const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
   const PILE_X_JITTER    = 0.95;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
@@ -1049,9 +1054,13 @@
   }
 
   function drawPile(now){
-    // Accumulating chalkboard: never clear. Each landed glyph is committed to the pile
-    // canvas exactly once (the first time it is seen here), at full opacity with a small
-    // overstrike, so the chalk inexorably overwrites itself and gradually fills the screen.
+    // Etched chalkboard: never clear. Each landed glyph is committed to the pile
+    // canvas exactly once. Each commit is a 3-pass paint:
+    //   1) wide, low-alpha black halo  → separates glyph from existing pile texture
+    //   2) tight, high-alpha black stroke → gives the character a hard etched edge
+    //   3) chalk fill at a substantial but sub-1.0 alpha → reads as deposited ink
+    // The result: glyphs are legible and feel etched in place rather than smearing
+    // into atmospheric haze.
     for (let i=0;i<bins.length;i++){
       const b = bins[i];
       for (let j=0;j<b.glyphs.length;j++){
@@ -1063,17 +1072,25 @@
         pctx.translate(gd.x, gd.y);
         pctx.rotate(gd.rot);
         pctx.font = gd.fontStr;
-        pctx.lineWidth = Math.max(1.5, gd.fontSize / 7);
-        // Full chalk alpha — no fade-in ramp; chalk hits the board at full strength.
-        const pa = (gd.ghost ? GLYPH_ALPHA * GHOST_ALPHA_MUL : GLYPH_ALPHA) * PILE_ALPHA;
-        // Faint dark stroke gives each glyph a hard edge against the board.
-        pctx.strokeStyle = 'rgba(0,0,0,' + (pa * 0.55).toFixed(3) + ')';
+        pctx.lineJoin = 'round';
+        pctx.miterLimit = 2;
+        // Pile alpha is decoupled from the in-flight (falling) GLYPH_ALPHA so falling
+        // chalk can stay light/atmospheric while landed chalk is decisively concrete.
+        const fillA   = (gd.ghost ? PILE_FILL_ALPHA * GHOST_ALPHA_MUL : PILE_FILL_ALPHA);
+        const edgeA   = (gd.ghost ? PILE_EDGE_ALPHA * GHOST_ALPHA_MUL : PILE_EDGE_ALPHA);
+        const haloA   = (gd.ghost ? PILE_HALO_ALPHA * GHOST_ALPHA_MUL : PILE_HALO_ALPHA);
+        const baseLW  = Math.max(1.5, gd.fontSize / 7);
+        // 1) Halo: wide, low alpha — lifts the glyph off the existing pile background.
+        pctx.lineWidth = baseLW * 2.4;
+        pctx.strokeStyle = 'rgba(0,0,0,' + haloA.toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);
-        // Chalk fill, with a tiny overstrike at +0.6/+0.4 px to read as a real,
-        // physically marked stroke rather than a soft, anti-aliased ghost.
-        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+pa.toFixed(3)+')';
+        // 2) Etched edge: tight, high alpha — the line that gives the character its bite.
+        pctx.lineWidth = Math.max(1.0, baseLW * 0.9);
+        pctx.strokeStyle = 'rgba(0,0,0,' + edgeA.toFixed(3) + ')';
+        pctx.strokeText(gd.text, 0, 0);
+        // 3) Chalk fill — single crisp pass; no overstrike to muddy anti-aliasing.
+        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+fillA.toFixed(3)+')';
         pctx.fillText(gd.text, 0, 0);
-        pctx.fillText(gd.text, 0.6, 0.4);
         pctx.restore();
         gd.rendered = true;                   // commit: this glyph is now permanent
       }

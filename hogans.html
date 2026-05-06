@@ -91,13 +91,23 @@
   const FONT_SIZE_SYMBOL   = FONT_PX + 6;      // ornamental headline tokens
   const FONT_SIZE_JITTER   = 1.6;              // ± px random size jitter per flake
 
+  // Rare "ghost" drops — every ~1% of spawns we leak a single emoji or a fragment of
+  // emoji-laden teen-texting nonsense. They render at lower alpha so they feel ghostly and
+  // ephemeral against the math/code lattice.
+  const GHOST_PROBABILITY  = 0.012;            // ~1.2% chance per spawn
+  const GHOST_ALPHA_MUL    = 0.45;             // how much fainter ghosts render than other glyphs
+  const FONT_SIZE_GHOST    = FONT_PX + 3;      // a touch larger so emoji read at any size
+  const GHOST_FONT_FAMILY  = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif';
+
   // Pick a per-flake font (family + size + italic) based on the snippet's kind.
   function pickFont(kind){
     let family, size, italic;
     if (kind === "code") {
-      family = CODE_FONT_FAMILY; size = FONT_SIZE_CODE;   italic = false;
+      family = CODE_FONT_FAMILY;   size = FONT_SIZE_CODE;   italic = false;
     } else if (kind === "symbol") {
       family = SYMBOL_FONT_FAMILY; size = FONT_SIZE_SYMBOL; italic = true;
+    } else if (kind === "ghost") {
+      family = GHOST_FONT_FAMILY;  size = FONT_SIZE_GHOST;  italic = false;
     } else { /* math */
       family = MATH_FONT_FAMILY;   size = FONT_SIZE_MATH;   italic = true;
     }
@@ -452,6 +462,52 @@
     { t: "ℋ", k: "symbol" }
   ];
 
+  // Rare ghostly drop-ins (~1% of spawns): emoji and short teen-text nonsense.
+  const GHOSTS = [
+    { t: "👻", k: "ghost" },
+    { t: "🌙", k: "ghost" },
+    { t: "✨", k: "ghost" },
+    { t: "💫", k: "ghost" },
+    { t: "🪐", k: "ghost" },
+    { t: "🌸", k: "ghost" },
+    { t: "🍵", k: "ghost" },
+    { t: "☕", k: "ghost" },
+    { t: "📎", k: "ghost" },
+    { t: "🦊", k: "ghost" },
+    { t: "🐸", k: "ghost" },
+    { t: "🌈", k: "ghost" },
+    { t: "🍓", k: "ghost" },
+    { t: "🍦", k: "ghost" },
+    { t: "🐝", k: "ghost" },
+    { t: "🌻", k: "ghost" },
+    { t: "no thoughts head empty 🥲", k: "ghost" },
+    { t: "bestie wym 💀💀💀", k: "ghost" },
+    { t: "ok mother 🫶", k: "ghost" },
+    { t: "literally so real rn ✨", k: "ghost" },
+    { t: "not me crying again 😭", k: "ghost" },
+    { t: "the way I gasped 🫢", k: "ghost" },
+    { t: "vibe check passed 🌷", k: "ghost" },
+    { t: "she ate and left no crumbs 🍰", k: "ghost" },
+    { t: "low key obsessed 😵‍💫", k: "ghost" },
+    { t: "this is so core 🪞", k: "ghost" },
+    { t: "delulu but make it fashion 👛", k: "ghost" },
+    { t: "girl help 🧎", k: "ghost" },
+    { t: "the giggle is sending me 🤭", k: "ghost" },
+    { t: "core memory unlocked 🎐", k: "ghost" },
+    { t: "we love a chaotic queen 🦄", k: "ghost" },
+    { t: "bro woke up and chose violence 😤", k: "ghost" },
+    { t: "main character energy 🌟", k: "ghost" },
+    { t: "the math is mathing 📐", k: "ghost" },
+    { t: "POV: it's friday 🕯️", k: "ghost" },
+    { t: "rent free in my brain 🏠💭", k: "ghost" },
+    { t: "cancel my plans 🚫📆", k: "ghost" },
+    { t: "tea: spilled ☕🫖", k: "ghost" },
+    { t: "i fear i am a moth 🪔", k: "ghost" },
+    { t: "my roman empire fr 🏛️", k: "ghost" },
+    { t: "iykyk 🤝", k: "ghost" },
+    { t: "pls and ty 🙏✨", k: "ghost" }
+  ];
+
   const fall = document.getElementById('fall');
   const pile = document.getElementById('pile');
   const fctx = fall.getContext('2d');
@@ -609,14 +665,25 @@
     // Pick a snippet whose text is not currently visible anywhere on screen.
     // Walk SNIPPETS starting from a random offset; first one not in inUseTexts wins.
     let pick = null;
-    const startIdx = (Math.random()*SNIPPETS.length)|0;
-    for (let off=0; off<SNIPPETS.length; off++){
-      const cand = SNIPPETS[(startIdx + off) % SNIPPETS.length];
-      if (!inUseTexts.has(cand.t)){ pick = cand; break; }
+    // Rare ghost drops: with GHOST_PROBABILITY chance, pick from GHOSTS instead.
+    if (Math.random() < GHOST_PROBABILITY){
+      const gStart = (Math.random()*GHOSTS.length)|0;
+      for (let off=0; off<GHOSTS.length; off++){
+        const cand = GHOSTS[(gStart + off) % GHOSTS.length];
+        if (!inUseTexts.has(cand.t)){ pick = cand; break; }
+      }
+      if (pick === null) pick = GHOSTS[gStart];
+    } else {
+      const startIdx = (Math.random()*SNIPPETS.length)|0;
+      for (let off=0; off<SNIPPETS.length; off++){
+        const cand = SNIPPETS[(startIdx + off) % SNIPPETS.length];
+        if (!inUseTexts.has(cand.t)){ pick = cand; break; }
+      }
+      if (pick === null) pick = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
     }
-    if (pick === null) pick = SNIPPETS[startIdx];
     const text = pick.t;
     const kind = pick.k;
+    const ghost = (kind === "ghost");
     inUseTexts.add(text);
     // Per-flake typography: code stays monospace, math/symbols get serif italic at larger size.
     const fontObj = pickFont(kind);
@@ -631,7 +698,7 @@
     const vy = FALL_SPEED * (1 + (Math.random()*2-1)*FALL_SPEED_VAR);
     falling.push({
       text, x, y, vy,
-      kind,
+      kind, ghost,
       fontObj, fontStr,                  // per-flake typography (stable across all frames)
       k: 0,
       cxSnap,                            // each flake renders against its own snapshot of cxBoard
@@ -768,7 +835,8 @@
             y: g.y,
             rot: restRot,
             fontStr: g.fontStr,
-            fontSize: g.fontObj.size
+            fontSize: g.fontObj.size,
+            ghost: g.ghost
           });
           if (g.y < b.topY) b.topY = g.y;
           // Free the text immediately so the same snippet can fall again — once a glyph is
@@ -815,7 +883,8 @@
             y: g.y,
             rot: restRot,
             fontStr: g.fontStr,
-            fontSize: g.fontObj.size
+            fontSize: g.fontObj.size,
+            ghost: g.ghost
           });
           if (g.y < b.topY) b.topY = g.y;
           inUseTexts.delete(g.text);
@@ -890,7 +959,8 @@
 
     for (let i=0;i<falling.length;i++){
       const g = falling[i];
-      const a = alphaForFall(now, g);
+      let a = alphaForFall(now, g);
+      if (g.ghost) a *= GHOST_ALPHA_MUL;
       if (a <= 0.001) continue;
       const c = samplePhoto(g.x, g.y);
       const tSec = (now - g.birth) * 0.001;
@@ -922,10 +992,12 @@
         // Just the letters — no rectangular backing. Stroke width scales gently with font size
         // so larger ornamental glyphs read with the same crispness as small monospace ones.
         pctx.lineWidth = Math.max(1.5, gd.fontSize / 7);
-        pctx.strokeStyle = 'rgba(0,0,0,' + PILE_STROKE_ALPHA.toFixed(3) + ')';
+        const psa = gd.ghost ? PILE_STROKE_ALPHA * GHOST_ALPHA_MUL : PILE_STROKE_ALPHA;
+        pctx.strokeStyle = 'rgba(0,0,0,' + psa.toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);
         // Photo-sampled fill at high alpha — solid-feeling code snippet
-        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+PILE_ALPHA.toFixed(3)+')';
+        const pa = gd.ghost ? PILE_ALPHA * GHOST_ALPHA_MUL : PILE_ALPHA;
+        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+pa.toFixed(3)+')';
         pctx.fillText(gd.text, 0, 0);
         pctx.restore();
       }

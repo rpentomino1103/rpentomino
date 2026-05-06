@@ -573,7 +573,7 @@
       bins = [];
       for (let i=0; i<binCount; i++){
         const x0 = binStartX + i*pitch;
-        bins.push({ x0, x1: x0 + pitch, glyphs: [] });
+        bins.push({ x0, x1: x0 + pitch, glyphs: [], topY: binBaseY });
       }
     } else {
       // shift existing bins horizontally with the lattice
@@ -670,13 +670,16 @@
   function restingYFor(px){
     let topY = binBaseY;
     const radius = STACK_STEP * 1.25;
+    // Pre-filter by per-bin topY and x range — keeps perf sane as the pile grows huge.
     for (let bi=0; bi<bins.length; bi++){
-      const gs = bins[bi].glyphs;
+      const b = bins[bi];
+      if (b.topY >= topY) continue;
+      if (b.x1 < px - radius - pitch || b.x0 > px + radius + pitch) continue;
+      const gs = b.glyphs;
       for (let j=gs.length-1; j>=0; j--){
         const gd = gs[j];
-        if (Math.abs(gd.x - px) <= radius && gd.y < topY){
-          topY = gd.y;
-        }
+        if (gd.y >= topY) continue;
+        if (Math.abs(gd.x - px) <= radius) topY = gd.y;
       }
     }
     return topY - STACK_STEP - (Math.random()*2-1)*STACK_VARIANCE;
@@ -687,10 +690,14 @@
   function highestPileYInRange(xMin, xMax){
     let topY = binBaseY;
     for (let bi=0; bi<bins.length; bi++){
-      const gs = bins[bi].glyphs;
+      const b = bins[bi];
+      if (b.topY >= topY) continue;
+      if (b.x1 < xMin || b.x0 > xMax) continue;
+      const gs = b.glyphs;
       for (let j=gs.length-1; j>=0; j--){
         const gd = gs[j];
-        if (gd.x >= xMin && gd.x <= xMax && gd.y < topY) topY = gd.y;
+        if (gd.y >= topY) continue;
+        if (gd.x >= xMin && gd.x <= xMax) topY = gd.y;
       }
     }
     return topY;
@@ -759,6 +766,11 @@
             fontStr: g.fontStr,
             fontSize: g.fontObj.size
           });
+          if (g.y < b.topY) b.topY = g.y;
+          // Free the text immediately so the same snippet can fall again — once a glyph is
+          // part of the static pile it's effectively wallpaper, and we want the screen to
+          // fill faster than 343 unique strings would otherwise allow.
+          inUseTexts.delete(g.text);
           falling.splice(i,1);
         }
         continue;
@@ -815,17 +827,9 @@
       }
     }
 
-    // Pile is IMMUTABLE once landed — never move or rewrite a settled glyph.
-    // Glyphs that have piled up past the top of the screen are simply removed (off-screen).
-    for (let bi=0; bi<bins.length; bi++){
-      const gs = bins[bi].glyphs;
-      for (let j=gs.length-1; j>=0; j--){
-        if (gs[j].y < -40){
-          inUseTexts.delete(gs[j].text);
-          gs.splice(j, 1);
-        }
-      }
-    }
+    // Pile is IMMUTABLE once landed — never move, rewrite, or remove a settled glyph.
+    // The pile is allowed to grow unboundedly so the photograph is gradually
+    // covered by an ever-deepening junk-heap of code and equations. (no-op intentionally.)
   }
 
   function alphaForFall(now, g){

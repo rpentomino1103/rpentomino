@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>hogans</title>
+<meta name="description" content="" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%23000%22/></svg>" />
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #fff;
+  }
+  .bg {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    object-fit: cover; object-position: center;
+    user-select: none; -webkit-user-drag: none; pointer-events: none;
+  }
+  canvas#galton {
+    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    pointer-events: none; mix-blend-mode: screen; z-index: 9999;
+  }
+  h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+</style>
+</head>
+<body>
+<h1>hogans</h1>
+<img class="bg" src="/photos/hogans.jpg" alt="" />
+<canvas id="galton"></canvas>
+<script>
+(()=>{
+  const PEAK_ALPHA   = 0.13;
+  const FALL_GLYPH_ALPHA = 0.13;
+  const BIN_GLYPH_ALPHA  = 0.18;
+  const TRAIL_FADE   = 0.12;
+  const ROWS         = 12;
+  const PEG_GAP_PX   = 46;
+  const ROW_GAP_PX   = 46;
+  const GRAVITY      = 0.42;
+  const FRICTION_X   = 0.86;
+  const RESTITUTION  = 0.55;
+  const KICK         = 2.0;
+  const SPAWN_MS     = 110;
+  const MAX_FALLING  = 220;
+  const BIN_HEIGHT   = 220;
+  const FONT_PX      = 14;
+  const PLINK_VOL    = 0.06;
+  const WARM = [255, 215, 165];
+  const COOL = [200, 220, 255];
+
+  const SNIPPETS = [
+    "for(;;){}", "if(x){}", "=>", "fn()", "{...}", "x++",
+    "0x1F", "git push", "rm -rf", "01101", "<div/>",
+    "let i=0", "[]", "()=>", "true", "false", "NaN",
+    "null", "0xCAFE", "y[i]", "&&", "||", "==", "!=",
+    "Math.PI", "this.", "new", "await", "async", "yield",
+    "fetch()", "JSON", "i++", "++j", "x|0", "&0xff",
+    "?:", "1<<8", ">>>", "%%", "/* */", "// !", "#define",
+    "$", "@", "0b101", "fn x", "λ", "Σ", "∂",
+    "while(1)", "break", "void", "int*", "char[]", "bool",
+    "0n", "BigInt", "Promise", "try{}", "catch(e)", "throw",
+    "render()", "useFx", "redux", "map()", "reduce", "filter"
+  ];
+
+  const cv = document.getElementById('galton');
+  const ctx = cv.getContext('2d');
+  let dpr, W, H;
+  let pegs = [];
+  let falling = [];
+  let bins = [];
+  let binBaseY = 0;
+
+  let actx = null;
+  function ensureAudio(){
+    if (actx) return;
+    try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
+  }
+  function plink(strength){
+    if (!actx) return;
+    const t = actx.currentTime;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    const f = 380 + Math.random()*640;
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(80, f*0.45), t+0.12);
+    const v = PLINK_VOL * Math.min(1, 0.4 + strength*0.6);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+    o.connect(g).connect(actx.destination);
+    o.start(t); o.stop(t+0.2);
+  }
+  addEventListener('pointerdown', ensureAudio, {once:false});
+  addEventListener('keydown',     ensureAudio, {once:false});
+
+  function buildBoard(){
+    pegs.length = 0;
+    bins = [];
+    const cx = innerWidth * 0.5;
+    const topY = Math.max(80, innerHeight*0.18);
+    binBaseY = innerHeight - 24;
+    const bottomBoardY = innerHeight - BIN_HEIGHT - 30;
+    const usableH = bottomBoardY - topY;
+    const rowGap = Math.min(ROW_GAP_PX, usableH/(ROWS+1));
+    const pitch = Math.min(PEG_GAP_PX, (innerWidth-80)/(ROWS+1));
+    for (let r=0; r<ROWS; r++){
+      const y = topY + (r+1)*rowGap;
+      const count = r+1;
+      const xStart = cx - (count-1)*0.5*pitch;
+      for (let i=0;i<count;i++){
+        pegs.push({x:xStart + i*pitch, y, r:4});
+      }
+    }
+    const startX = cx - (ROWS)*0.5*pitch - pitch*0.5;
+    for (let i=0; i<=ROWS; i++){
+      const x0 = startX + i*pitch;
+      const x1 = x0 + pitch;
+      bins.push({ x0, x1, glyphs: [], stackY: binBaseY });
+    }
+  }
+
+  function resize(){
+    dpr = window.devicePixelRatio || 1;
+    W = innerWidth; H = innerHeight;
+    cv.width  = Math.floor(W*dpr);
+    cv.height = Math.floor(H*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.font = FONT_PX+"px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    buildBoard();
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  function spawn(){
+    if (falling.length >= MAX_FALLING) return;
+    const text = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
+    const cx = innerWidth*0.5;
+    const x  = cx + (Math.random()-0.5)*60;
+    const y  = -20;
+    const vx = (Math.random()-0.5)*0.6;
+    const vy = 0.6 + Math.random()*0.6;
+    const tone = Math.random();
+    falling.push({ text, x, y, vx, vy, hue:tone, lastHit:0 });
+  }
+  let lastSpawn = 0;
+
+  function tickPhysics(now){
+    for (let k=falling.length-1; k>=0; k--){
+      const g = falling[k];
+      g.vy += GRAVITY*0.06;
+      g.x  += g.vx;
+      g.y  += g.vy;
+
+      const gr = 6;
+      for (let p=0; p<pegs.length; p++){
+        const peg = pegs[p];
+        const dx = g.x - peg.x;
+        const dy = g.y - peg.y;
+        const rr = peg.r + gr;
+        if (dx*dx + dy*dy < rr*rr){
+          const d = Math.max(0.001, Math.sqrt(dx*dx+dy*dy));
+          const nx = dx/d, ny = dy/d;
+          g.x = peg.x + nx*rr;
+          g.y = peg.y + ny*rr;
+          const vn = g.vx*nx + g.vy*ny;
+          if (vn < 0){
+            g.vx = (g.vx - 2*vn*nx) * RESTITUTION;
+            g.vy = (g.vy - 2*vn*ny) * RESTITUTION;
+            const dir = Math.random() < 0.5 ? -1 : 1;
+            g.vx = g.vx*FRICTION_X + dir*KICK;
+            g.vy = Math.max(g.vy, 0.6);
+            if (now - g.lastHit > 40){
+              g.lastHit = now;
+              plink(Math.min(1, Math.abs(vn)/3));
+            }
+          }
+        }
+      }
+
+      if (g.y >= binBaseY - 8){
+        let bIdx = bins.findIndex(b => g.x >= b.x0 && g.x < b.x1);
+        if (bIdx < 0){
+          if (g.x < bins[0].x0) bIdx = 0;
+          else bIdx = bins.length-1;
+        }
+        const b = bins[bIdx];
+        b.glyphs.push({ text:g.text, hue:g.hue });
+        if (now - g.lastHit > 40){ plink(0.4); }
+        falling.splice(k,1);
+        continue;
+      }
+
+      if (g.x < -40 || g.x > innerWidth+40 || g.y > innerHeight+40){
+        falling.splice(k,1);
+      }
+    }
+  }
+
+  function lerp(a,b,t){return a+(b-a)*t;}
+  function rgbFor(h){
+    const r = Math.round(lerp(WARM[0], COOL[0], h));
+    const g = Math.round(lerp(WARM[1], COOL[1], h));
+    const b = Math.round(lerp(WARM[2], COOL[2], h));
+    return r+","+g+","+b;
+  }
+
+  function draw(now){
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,'+TRAIL_FADE+')';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (let i=0;i<falling.length;i++){
+      const g = falling[i];
+      const a = FALL_GLYPH_ALPHA * (0.7 + 0.3*Math.sin((g.x+g.y)*0.02 + now*0.001));
+      ctx.fillStyle = 'rgba('+rgbFor(g.hue)+','+a.toFixed(3)+')';
+      ctx.fillText(g.text, g.x, g.y);
+    }
+
+    for (let i=0;i<bins.length;i++){
+      const b = bins[i];
+      const cx = (b.x0 + b.x1) * 0.5;
+      for (let j=0;j<b.glyphs.length;j++){
+        const gy = binBaseY - j*(FONT_PX+2);
+        if (gy < 0) break;
+        const gd = b.glyphs[j];
+        const a = BIN_GLYPH_ALPHA * (0.8 + 0.2*Math.sin((cx+gy)*0.01 + now*0.0006));
+        ctx.fillStyle = 'rgba('+rgbFor(gd.hue)+','+a.toFixed(3)+')';
+        ctx.fillText(gd.text, cx, gy);
+      }
+    }
+
+    const grd = ctx.createLinearGradient(0, binBaseY-2, 0, binBaseY+30);
+    grd.addColorStop(0, 'rgba(255,220,170,'+(PEAK_ALPHA*0.35).toFixed(3)+')');
+    grd.addColorStop(1, 'rgba(255,220,170,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, binBaseY-2, W, 32);
+  }
+
+  function loop(now){
+    if (now - lastSpawn >= SPAWN_MS){
+      lastSpawn = now;
+      spawn();
+    }
+    tickPhysics(now);
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

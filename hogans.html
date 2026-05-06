@@ -55,7 +55,7 @@
   const ROT_PERIOD_MAX   = 7.0;
 
   const PILE_REST_ROT    = 0.75;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 0.96;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
+  const PILE_ALPHA       = 1.00;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
   const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
   const PILE_X_JITTER    = 0.95;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
@@ -682,6 +682,12 @@
       c.width  = Math.floor(W*dpr);
       c.height = Math.floor(H*dpr);
     }
+    // Pile canvas was auto-cleared by the width/height reassignment above; mark every
+    // landed glyph as un-rendered so the accumulating pile re-commits onto the fresh canvas.
+    if (typeof bins !== 'undefined' && bins){
+      for (let i=0;i<bins.length;i++){ const b=bins[i]; if(!b||!b.glyphs) continue;
+        for (let j=0;j<b.glyphs.length;j++){ b.glyphs[j].rendered = false; } }
+    }
     for (const cx of [fctx, pctx]){
       cx.setTransform(dpr,0,0,dpr,0,0);
       cx.font = FONT_PX + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -1043,38 +1049,33 @@
   }
 
   function drawPile(now){
-    pctx.clearRect(0,0,W,H);
+    // Accumulating chalkboard: never clear. Each landed glyph is committed to the pile
+    // canvas exactly once (the first time it is seen here), at full opacity with a small
+    // overstrike, so the chalk inexorably overwrites itself and gradually fills the screen.
     for (let i=0;i<bins.length;i++){
       const b = bins[i];
       for (let j=0;j<b.glyphs.length;j++){
         const gd = b.glyphs[j];
+        if (gd.rendered) continue;            // already permanent ink on the pile
         if (gd.y < -20) continue;
         const c = samplePhoto(gd.x, gd.y);
         pctx.save();
         pctx.translate(gd.x, gd.y);
         pctx.rotate(gd.rot);
         pctx.font = gd.fontStr;
-        // Just the letters — no rectangular backing. Stroke width scales gently with font size
-        // so larger ornamental glyphs read with the same crispness as small monospace ones.
         pctx.lineWidth = Math.max(1.5, gd.fontSize / 7);
-        // Pile glyphs render at the SAME alpha as in-flight glyphs — no opacity pop on settling.
-        // The pile canvas uses mix-blend-mode: screen, so wherever multiple pile glyphs overlap
-        // they additively brighten. Density alone produces the brightening; opacity stays low.
-        // Pile fill alpha matches the in-flight alpha exactly. The pile canvas uses
-        // mix-blend-mode: lighter so each pile glyph contributes additively — a single glyph
-        // is faint, but where many overlap they cumulatively brighten linearly with depth.
-        const baseA = gd.ghost ? GLYPH_ALPHA * GHOST_ALPHA_MUL : GLYPH_ALPHA;
-        // Soft fade-in over LANDING_FADE_MS so a freshly-landed glyph doesn't pop in.
-        const ageMs = gd.landedAt ? (now - gd.landedAt) : LANDING_FADE_MS;
-        const tRamp = Math.min(1, Math.max(0, ageMs / LANDING_FADE_MS));
-        const eRamp = (1 - Math.cos(tRamp * Math.PI)) * 0.5;
-        const pa = baseA * (0.85 + 0.15 * eRamp); // already near full at touchdown; tiny fade-in
-        // Subtle dark stroke (photo-sampled fill takes care of color)
+        // Full chalk alpha — no fade-in ramp; chalk hits the board at full strength.
+        const pa = (gd.ghost ? GLYPH_ALPHA * GHOST_ALPHA_MUL : GLYPH_ALPHA) * PILE_ALPHA;
+        // Faint dark stroke gives each glyph a hard edge against the board.
         pctx.strokeStyle = 'rgba(0,0,0,' + (pa * 0.55).toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);
+        // Chalk fill, with a tiny overstrike at +0.6/+0.4 px to read as a real,
+        // physically marked stroke rather than a soft, anti-aliased ghost.
         pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+pa.toFixed(3)+')';
         pctx.fillText(gd.text, 0, 0);
+        pctx.fillText(gd.text, 0.6, 0.4);
         pctx.restore();
+        gd.rendered = true;                   // commit: this glyph is now permanent
       }
     }
   }

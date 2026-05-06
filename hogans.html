@@ -18,32 +18,37 @@
     object-fit: cover; object-position: center;
     user-select: none; -webkit-user-drag: none; pointer-events: none;
   }
-  canvas#galton {
+  /* Two stacked canvases: one for falling flakes (with trail-blur),
+     one for the settled pile (cleared + redrawn fresh each frame). */
+  canvas.layer {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
-    pointer-events: none; mix-blend-mode: screen; z-index: 9999;
+    pointer-events: none; mix-blend-mode: screen;
   }
+  canvas#fall { z-index: 9998; }
+  canvas#pile { z-index: 9999; }
   h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
 <body>
 <h1>hogans</h1>
 <img class="bg" id="bgimg" src="/photos/hogans.jpg" alt="" crossorigin="anonymous" />
-<canvas id="galton"></canvas>
+<canvas id="fall" class="layer"></canvas>
+<canvas id="pile" class="layer"></canvas>
 <script>
 (()=>{
   // ---------- Tunables ----------
-  const GLYPH_ALPHA      = 0.13;   // matches redwood Game of Life PEAK_ALPHA
-  const TRAIL_FADE       = 0.05;   // long, soft motion blur
-  const ROWS             = 11;     // Galton rows -> 12 bins, Binomial(11, .5)
+  const GLYPH_ALPHA      = 0.13;
+  const TRAIL_FADE       = 0.05;
+  const ROWS             = 11;
   const PEG_PITCH_PX     = 44;
   const ROW_GAP_PX       = 50;
-  const FALL_SPEED       = 26;     // px/sec — gentle snowfall
-  const FALL_SPEED_VAR   = 0.30;   // ±30%
-  const SWAY_AMP         = 6;      // px lateral sway (extra to lattice motion)
-  const SWAY_FREQ_HZ     = 0.18;   // very slow
-  const ROT_AMP_MIN      = 0.10;   // radians (~6°)
-  const ROT_AMP_MAX      = 0.18;   // radians (~10°)
-  const ROT_PERIOD_MIN   = 3.0;    // seconds
+  const FALL_SPEED       = 26;
+  const FALL_SPEED_VAR   = 0.30;
+  const SWAY_AMP         = 6;
+  const SWAY_FREQ_HZ     = 0.18;
+  const ROT_AMP_MIN      = 0.10;
+  const ROT_AMP_MAX      = 0.18;
+  const ROT_PERIOD_MIN   = 3.0;
   const ROT_PERIOD_MAX   = 7.0;
   const BIN_HEIGHT       = 240;
   const FONT_PX          = 13;
@@ -53,49 +58,112 @@
   const SPAWN_MS_MIN     = 220;
   const SPAWN_MS_MAX     = 520;
   const MAX_FALLING      = 100;
-  const FADE_IN_MS       = 800;    // soft entry from the dark
-  // Photo sampling tuning
-  const PHOTO_SAT_BOOST  = 0.85;   // <1 desaturates toward grey, matching the photo's palette
-  const PHOTO_LIGHT_BIAS = 0.12;   // small lift so the darkest pixels still emit a hint
-  const PHOTO_BLUR_PX    = 6;      // average a small neighborhood -> ambient shimmer
+  const FADE_IN_MS       = 800;
+  const LAND_GLIDE_MS    = 700;
+  const PHOTO_SAT_BOOST  = 0.85;
+  const PHOTO_LIGHT_BIAS = 0.12;
+  const PHOTO_BLUR_PX    = 6;
 
   const SNIPPETS = [
-    "for(;;){}", "if(x){}", "=>", "fn()", "{...}", "x++",
-    "0x1F", "git push", "rm -rf", "01101", "<div/>",
-    "let i=0", "[]", "()=>", "true", "false", "NaN",
-    "null", "0xCAFE", "y[i]", "&&", "||", "==", "!=",
-    "Math.PI", "this.", "new", "await", "async", "yield",
-    "fetch()", "JSON", "i++", "++j", "x|0", "&0xff",
-    "?:", "1<<8", ">>>", "%%", "/* */", "// !", "#define",
-    "$", "@", "0b101", "fn x", "λ", "Σ", "∂",
-    "while(1)", "break", "void", "int*", "char[]", "bool",
-    "0n", "BigInt", "Promise", "try{}", "catch(e)", "throw",
-    "render()", "useFx", "redux", "map()", "reduce", "filter"
+    "Y = λf.(λx.f(x x))(λx.f(x x))",
+    "K = λx.λy.x",
+    "S = λx.λy.λz.x z (y z)",
+    "I = λx.x",
+    "ω = λx.x x",
+    "Ω = ω ω",
+    "B = λf.λg.λx.f(g x)",
+    "C = λf.λx.λy.f y x",
+    "fix f = let x = f x in x",
+    "e^{iπ} + 1 = 0",
+    "ζ(s) = Σ 1/n^s",
+    "F_n = F_{n-1} + F_{n-2}",
+    "φ = (1+√5)/2",
+    "∂L/∂q − d/dt(∂L/∂q̇) = 0",
+    "∇·E = ρ/ε₀",
+    "‖x‖² = ⟨x,x⟩",
+    "P(A|B) = P(B|A)·P(A)/P(B)",
+    "lim (1+1/n)^n = e",
+    "qsort [] = []",
+    "qsort (p:xs) = qsort [x|x<-xs,x<p] ++ [p] ++ qsort [x|x<-xs,x>=p]",
+    "fib n = if n<2 then n else fib(n-1)+fib(n-2)",
+    "ack(0,n) = n+1",
+    "gcd a 0 = a",
+    "gcd a b = gcd b (a mod b)",
+    "map f [] = []",
+    "foldr f z (x:xs) = f x (foldr f z xs)",
+    "iterate f x = x : iterate f (f x)",
+    "return >>= f  ≡  f",
+    "m >>= return  ≡  m",
+    "(m>>=f)>>=g  ≡  m>>=(λx.f x>>=g)",
+    "η : 1 → T",
+    "μ : T² → T",
+    "f∘id = f = id∘f",
+    "F(g∘f) = F(g)∘F(f)",
+    "∀a. a → a",
+    "Bool ::= True | False",
+    "List a = Nil | Cons a (List a)",
+    "Maybe a = Nothing | Just a",
+    "Π(x:A) B(x)",
+    "Σ(x:A) B(x)",
+    "while(P==0) yield();",
+    "lock(); /* CS */ unlock();",
+    "spawn(go(work, ch));",
+    "select { case x := <-ch: }",
+    "fork(); exec(prog);",
+    "EAGAIN ≠ EWOULDBLOCK",
+    "/^(\\d+)\\.(\\d+)$/",
+    "s/\\bthe\\b/THE/g",
+    "(?<=foo)bar",
+    "[A-Z]\\w*",
+    "x & (x-1)  // clear lowest bit",
+    "(x ^ y) & -(x < y)",
+    "n & -n     // lowest set bit",
+    "popcount(x)",
+    "sign = (x>>31) | ((-x)>>>31)",
+    "H(M, w) = ⊥",
+    "K(x) = min{|p|: U(p)=x}",
+    "Σ(n)  // busy beaver",
+    "PA ⊬ Con(PA)",
+    "while alive: dream()",
+    "if not us, then who?",
+    "// here be dragons",
+    "// TODO: prove termination",
+    "assert(reality);",
+    "throw new Hope();",
+    "1/0 = ∞",
+    "0.1 + 0.2 ≠ 0.3",
+    "NaN ≠ NaN",
+    "Math.sin(π) ≈ 1.22e-16",
+    "y = g^x mod p",
+    "ECDSA(m, k) = (r, s)",
+    "OTP: c = m ⊕ k",
+    "H(X) = -Σ p log p",
+    "I(X;Y) = H(X) − H(X|Y)",
+    "C = B log₂(1 + S/N)",
+    "[]", "{}", "()", "λ", "→", "∀", "∃", "≡", "⟂", "≠",
+    "<*>", "<$>", ">>=", "::", "=>", "?:", ".."
   ];
 
-  const cv  = document.getElementById('galton');
-  const ctx = cv.getContext('2d');
+  const fall = document.getElementById('fall');
+  const pile = document.getElementById('pile');
+  const fctx = fall.getContext('2d');
+  const pctx = pile.getContext('2d');
   let dpr, W, H;
 
-  // Geometry computed in resize()
   let cxBoard, topY, rowY = [], pitch, rowGap;
   let binBaseY, binStartX, binCount;
   let bins = [];
-
   let falling = [];
 
-  // ---------- Photo sampler (offscreen canvas of the bg image) ----------
+  // ---------- Photo sampler ----------
   const photo = document.getElementById('bgimg');
   const sampler = document.createElement('canvas');
   const sctx = sampler.getContext('2d', { willReadFrequently: true });
   let photoReady = false, photoData = null, photoW = 0, photoH = 0;
-  // We mirror the CSS object-fit:cover mapping so the sampled pixel
-  // matches what the user sees behind that screen coordinate.
   let coverScale = 1, coverDX = 0, coverDY = 0;
 
   function buildSampler(){
     if (!photo.naturalWidth) return;
-    // Draw a small, blurred copy for ambient color sampling
     const targetW = 640;
     const ratio = photo.naturalHeight / photo.naturalWidth;
     sampler.width  = targetW;
@@ -103,17 +171,18 @@
     sctx.filter = 'blur(' + PHOTO_BLUR_PX + 'px)';
     sctx.drawImage(photo, 0, 0, sampler.width, sampler.height);
     sctx.filter = 'none';
-    photoData = sctx.getImageData(0, 0, sampler.width, sampler.height).data;
-    photoW = sampler.width;
-    photoH = sampler.height;
-    photoReady = true;
+    try {
+      photoData = sctx.getImageData(0, 0, sampler.width, sampler.height).data;
+      photoW = sampler.width;
+      photoH = sampler.height;
+      photoReady = true;
+    } catch(e) { photoReady = false; }
     updateCoverMapping();
   }
   function updateCoverMapping(){
     if (!photo.naturalWidth) return;
     const iw = photo.naturalWidth, ih = photo.naturalHeight;
     const cw = innerWidth, ch = innerHeight;
-    // object-fit:cover: scale so image covers viewport
     coverScale = Math.max(cw/iw, ch/ih);
     const dw = iw * coverScale, dh = ih * coverScale;
     coverDX = (cw - dw) * 0.5;
@@ -122,35 +191,26 @@
   if (photo.complete && photo.naturalWidth) buildSampler();
   else photo.addEventListener('load', buildSampler);
 
-  // Sample the photo at viewport coordinate (sx, sy) and return r,g,b
   function samplePhoto(sx, sy){
     if (!photoReady) return [200, 210, 225];
-    // viewport -> natural image coords (account for object-fit:cover)
     const nx = (sx - coverDX) / coverScale;
     const ny = (sy - coverDY) / coverScale;
-    // natural -> sampler coords
     const tx = (nx / photo.naturalWidth) * photoW;
     const ty = (ny / photo.naturalHeight) * photoH;
     const ix = Math.max(0, Math.min(photoW-1, tx | 0));
     const iy = Math.max(0, Math.min(photoH-1, ty | 0));
     const idx = (iy * photoW + ix) * 4;
     let r = photoData[idx], g = photoData[idx+1], b = photoData[idx+2];
-
-    // small lightness lift so very dark areas still emit something
     r = Math.min(255, r + 255*PHOTO_LIGHT_BIAS);
     g = Math.min(255, g + 255*PHOTO_LIGHT_BIAS);
     b = Math.min(255, b + 255*PHOTO_LIGHT_BIAS);
-
-    // desaturate toward the photo's near-monochrome palette
     const lum = 0.2126*r + 0.7152*g + 0.0722*b;
     r = lum + (r - lum) * PHOTO_SAT_BOOST;
     g = lum + (g - lum) * PHOTO_SAT_BOOST;
     b = lum + (b - lum) * PHOTO_SAT_BOOST;
-
     return [r|0, g|0, b|0];
   }
 
-  // ---------- Audio ----------
   let actx = null;
   function ensureAudio(){ if (actx) return; try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
   function plink(){
@@ -171,7 +231,6 @@
   addEventListener('pointerdown', ensureAudio);
   addEventListener('keydown',     ensureAudio);
 
-  // ---------- Layout ----------
   function buildBoard(){
     cxBoard = innerWidth * 0.5;
     topY    = Math.max(80, innerHeight * 0.16);
@@ -191,26 +250,22 @@
   function resize(){
     dpr = window.devicePixelRatio || 1;
     W = innerWidth; H = innerHeight;
-    cv.width  = Math.floor(W*dpr);
-    cv.height = Math.floor(H*dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.font = FONT_PX + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
+    for (const c of [fall, pile]){
+      c.width  = Math.floor(W*dpr);
+      c.height = Math.floor(H*dpr);
+    }
+    for (const cx of [fctx, pctx]){
+      cx.setTransform(dpr,0,0,dpr,0,0);
+      cx.font = FONT_PX + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      cx.textBaseline = "middle";
+      cx.textAlign = "center";
+    }
     buildBoard();
     updateCoverMapping();
   }
   resize();
   addEventListener('resize', resize);
 
-  // ---------- Spawn ----------
-  // Each flake holds:
-  //   text, hue, vy, birth
-  //   k: integer step count so far (lattice)
-  //   prevAnchorX, nextAnchorX: continuous interpolation endpoints
-  //   tStart, tEnd (ms): time window of current row transition
-  //   nextRow: index of the next peg row to traverse
-  //   swayPhase, rotAmp, rotPeriod, rotPhase
   function spawn(){
     if (falling.length >= MAX_FALLING) return;
     const text = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
@@ -218,13 +273,10 @@
     const y = topY - 30 - Math.random()*60;
     const vy = FALL_SPEED * (1 + (Math.random()*2-1)*FALL_SPEED_VAR);
     falling.push({
-      text,
-      x, y,
-      vy,
+      text, x, y, vy,
       k: 0,
       prevAnchorX: cxBoard,
       nextAnchorX: cxBoard,
-      // The first transition spans from spawn-y to rowY[0]
       tStartY: y,
       tEndY:   rowY[0],
       nextRow: 0,
@@ -235,53 +287,64 @@
       rotPhase:  Math.random()*Math.PI*2,
       rotDir:    Math.random()<0.5 ? -1 : 1,
       birth: performance.now(),
-      lastPlink: 0
+      lastPlink: 0,
+      landing: false,
+      landStartT: 0,
+      landFromX: 0, landFromY: 0,
+      landToX: 0, landToY: 0,
+      landBin: -1,
+      _landT: 0
     });
   }
   let lastSpawn = 0;
   let nextSpawnIn = SPAWN_MS_MIN;
 
-  // smoothstep-like easing
   function ease(t){
     if (t <= 0) return 0;
     if (t >= 1) return 1;
     return 0.5 - 0.5*Math.cos(t*Math.PI);
   }
 
-  // ---------- Physics ----------
   function tickPhysics(dt, now){
     for (let i=falling.length-1; i>=0; i--){
       const g = falling[i];
+
+      if (g.landing){
+        const t = ease(Math.min(1, (now - g.landStartT) / LAND_GLIDE_MS));
+        g.x = g.landFromX + (g.landToX - g.landFromX) * t;
+        g.y = g.landFromY + (g.landToY - g.landFromY) * t;
+        g._landT = t;
+        if (t >= 1){
+          const b = bins[g.landBin];
+          b.glyphs.push({ text: g.text, x: g.landToX, y: g.landToY, bornAt: now });
+          falling.splice(i, 1);
+        }
+        continue;
+      }
+
       g.y += g.vy * dt;
 
-      // When y crosses the next peg row, commit a coin flip and start a new transition
       while (g.nextRow < ROWS && g.y >= rowY[g.nextRow]){
-        // commit current target (we are deemed to have arrived at nextAnchorX at this row)
         g.prevAnchorX = g.nextAnchorX;
-        // make a new fair coin step
         const dir = Math.random() < 0.5 ? -1 : 1;
         g.k += dir;
         g.nextAnchorX = cxBoard + g.k * (pitch * 0.5);
-        // The new transition spans this peg row to the next (or to bin baseline)
         g.tStartY = rowY[g.nextRow];
-        g.tEndY   = (g.nextRow+1 < ROWS) ? rowY[g.nextRow+1] : (binBaseY - 6);
+        g.tEndY   = (g.nextRow+1 < ROWS) ? rowY[g.nextRow+1] : (rowY[ROWS-1] + rowGap*0.6);
         g.nextRow++;
-        // sparse plink
         if (Math.random() < STEP_NUDGE_PROB && now - g.lastPlink > PLINK_COOLDOWN){
           g.lastPlink = now;
           plink();
         }
       }
 
-      // continuous interpolated x along the current transition
       const denom = Math.max(0.001, g.tEndY - g.tStartY);
-      const t = ease((g.y - g.tStartY) / denom);
-      const baseX = g.prevAnchorX + (g.nextAnchorX - g.prevAnchorX) * t;
+      const tt = ease((g.y - g.tStartY) / denom);
+      const baseX = g.prevAnchorX + (g.nextAnchorX - g.prevAnchorX) * tt;
       const sway  = Math.sin(now*0.001 * SWAY_FREQ_HZ * Math.PI*2 + g.swayPhase) * SWAY_AMP;
       g.x = baseX + sway;
 
-      // landed
-      if (g.y >= binBaseY - 6){
+      if (g.nextRow >= ROWS && !g.landing){
         let kFinal = g.k;
         if (kFinal < -ROWS) kFinal = -ROWS;
         if (kFinal >  ROWS) kFinal =  ROWS;
@@ -292,75 +355,66 @@
         }
         const bIdx = Math.max(0, Math.min(binCount-1, (kFinal + ROWS) >> 1));
         const b = bins[bIdx];
-        b.glyphs.push({
-          text: g.text,
-          hue:  g.hue,
-          xJit: (Math.random()-0.5) * (pitch*0.55)
-        });
-        falling.splice(i,1);
-        continue;
+        const slotX = (b.x0 + b.x1) * 0.5;
+        const slotY = binBaseY - b.glyphs.length * (FONT_PX+1);
+        g.landing      = true;
+        g.landStartT   = now;
+        g.landFromX    = g.x;
+        g.landFromY    = g.y;
+        g.landToX      = slotX;
+        g.landToY      = slotY;
+        g.landBin      = bIdx;
       }
 
-      if (g.y > innerHeight + 40 || g.x < -80 || g.x > innerWidth + 80){
+      if (g.y > innerHeight + 120 || g.x < -100 || g.x > innerWidth + 100){
         falling.splice(i,1);
       }
     }
   }
 
-  // ---------- Render ----------
   function alphaForFall(now, g){
-    // soft fade-in only; constant alpha after that
-    const lifeIn = Math.min(1, (now - g.birth) / FADE_IN_MS);
-    return GLYPH_ALPHA * lifeIn;
+    let a = Math.min(1, (now - g.birth) / FADE_IN_MS);
+    return GLYPH_ALPHA * a;
   }
 
-  function colorAt(sx, sy){
-    return samplePhoto(sx, sy);
-  }
+  function drawFalling(now){
+    fctx.globalCompositeOperation = 'destination-out';
+    fctx.fillStyle = 'rgba(0,0,0,'+TRAIL_FADE+')';
+    fctx.fillRect(0,0,W,H);
+    fctx.globalCompositeOperation = 'source-over';
 
-  function draw(now){
-    // long, soft trail = motion blur
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = 'rgba(0,0,0,'+TRAIL_FADE+')';
-    ctx.fillRect(0,0,W,H);
-    ctx.globalCompositeOperation = 'source-over';
-
-    // Falling glyphs with rotational seesaw
     for (let i=0;i<falling.length;i++){
       const g = falling[i];
       const a = alphaForFall(now, g);
       if (a <= 0.001) continue;
-
-      // photo-sampled color at this position
-      const c = colorAt(g.x, g.y);
-
-      // seesaw rotation: sin(2π t / period + phase) * amp * dir
+      const c = samplePhoto(g.x, g.y);
       const tSec = (now - g.birth) * 0.001;
-      const rot = Math.sin(tSec / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
-
-      ctx.save();
-      ctx.translate(g.x, g.y);
-      ctx.rotate(rot);
-      ctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')';
-      ctx.fillText(g.text, 0, 0);
-      ctx.restore();
+      let rot = Math.sin(tSec / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
+      if (g.landing){
+        const damp = 1 - (g._landT || 0);
+        rot *= damp*damp;
+      }
+      fctx.save();
+      fctx.translate(g.x, g.y);
+      fctx.rotate(rot);
+      fctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')';
+      fctx.fillText(g.text, 0, 0);
+      fctx.restore();
     }
+  }
 
-    // Pile glyphs — same alpha cap as falling glyphs (no boost, no glow)
+  function drawPile(now){
+    pctx.clearRect(0,0,W,H);
     for (let i=0;i<bins.length;i++){
       const b = bins[i];
-      const cx = (b.x0 + b.x1) * 0.5;
       for (let j=0;j<b.glyphs.length;j++){
         const gd = b.glyphs[j];
-        const gy = binBaseY - j*(FONT_PX+1);
-        if (gy < 0) break;
-        const px = cx + gd.xJit*0.5;
-        const c = colorAt(px, gy);
-        ctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+GLYPH_ALPHA.toFixed(3)+')';
-        ctx.fillText(gd.text, px, gy);
+        if (gd.y < 0) break;
+        const c = samplePhoto(gd.x, gd.y);
+        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+GLYPH_ALPHA.toFixed(3)+')';
+        pctx.fillText(gd.text, gd.x, gd.y);
       }
     }
-    // (no baseline glow — keeps the pile at the same translucence as the fall)
   }
 
   let last = performance.now();
@@ -373,7 +427,8 @@
       spawn();
     }
     tickPhysics(dt, now);
-    draw(now);
+    drawFalling(now);
+    drawPile(now);
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);

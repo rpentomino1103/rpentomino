@@ -24,7 +24,7 @@
     pointer-events: none; mix-blend-mode: screen;
   }
   canvas#fall { z-index: 9998; }
-  canvas#pile { z-index: 9999; mix-blend-mode: screen; }
+  canvas#pile { z-index: 9999; mix-blend-mode: lighter; }
   h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
@@ -711,7 +711,11 @@
     // Spawn y must always be ABOVE the current pile top near the spout, so as the pile
     // grows up past topY the spout effectively rises with it and flakes never spawn inside the heap.
     const restAtSpoutY = restingYFor(x);   // y of (just above) highest pile near spout x
-    const spoutY = Math.min(topY, restAtSpoutY);
+    // Spout effectively tops out at SPOUT_CEILING_PX above the viewport. Once the pile has
+    // grown that high, new flakes keep spawning just above the screen rather than rising
+    // ever further into the void — the user always sees fresh activity falling.
+    const SPOUT_CEILING_PX = -50;
+    const spoutY = Math.max(SPOUT_CEILING_PX, Math.min(topY, restAtSpoutY));
     const y = spoutY - 30 - Math.random()*60;
     const vy = FALL_SPEED * (1 + (Math.random()*2-1)*FALL_SPEED_VAR);
     falling.push({
@@ -1028,12 +1032,15 @@
         // Pile glyphs render at the SAME alpha as in-flight glyphs — no opacity pop on settling.
         // The pile canvas uses mix-blend-mode: screen, so wherever multiple pile glyphs overlap
         // they additively brighten. Density alone produces the brightening; opacity stays low.
+        // Pile fill alpha matches the in-flight alpha exactly. The pile canvas uses
+        // mix-blend-mode: lighter so each pile glyph contributes additively — a single glyph
+        // is faint, but where many overlap they cumulatively brighten linearly with depth.
         const baseA = gd.ghost ? GLYPH_ALPHA * GHOST_ALPHA_MUL : GLYPH_ALPHA;
         // Soft fade-in over LANDING_FADE_MS so a freshly-landed glyph doesn't pop in.
         const ageMs = gd.landedAt ? (now - gd.landedAt) : LANDING_FADE_MS;
         const tRamp = Math.min(1, Math.max(0, ageMs / LANDING_FADE_MS));
         const eRamp = (1 - Math.cos(tRamp * Math.PI)) * 0.5;
-        const pa = baseA * (0.6 + 0.4 * eRamp); // start 60% then ease to 100% of base alpha
+        const pa = baseA * (0.85 + 0.15 * eRamp); // already near full at touchdown; tiny fade-in
         // Subtle dark stroke (photo-sampled fill takes care of color)
         pctx.strokeStyle = 'rgba(0,0,0,' + (pa * 0.55).toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);

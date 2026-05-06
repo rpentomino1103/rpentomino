@@ -31,25 +31,30 @@
 <canvas id="galton"></canvas>
 <script>
 (()=>{
-  const PEAK_ALPHA   = 0.13;
-  const FALL_GLYPH_ALPHA = 0.13;
-  const BIN_GLYPH_ALPHA  = 0.18;
-  const TRAIL_FADE   = 0.12;
-  const ROWS         = 12;
-  const PEG_GAP_PX   = 46;
-  const ROW_GAP_PX   = 46;
-  const GRAVITY      = 0.42;
-  const FRICTION_X   = 0.86;
-  const RESTITUTION  = 0.55;
-  const KICK         = 2.0;
-  const SPAWN_MS     = 110;
-  const MAX_FALLING  = 220;
-  const BIN_HEIGHT   = 220;
-  const FONT_PX      = 14;
-  const PLINK_VOL    = 0.06;
-  const WARM = [255, 215, 165];
-  const COOL = [200, 220, 255];
+  // ---------- Tunables (zen / snowfall) ----------
+  const PEAK_ALPHA       = 0.13;   // matches redwood Game of Life translucence
+  const FALL_ALPHA       = 0.10;   // very gentle while falling
+  const SETTLED_ALPHA    = 0.13;   // pile glyphs as translucent as the GoL canvas
+  const TRAIL_FADE       = 0.06;   // softer trail = longer ghosting, snowy feel
+  const ROWS             = 11;     // Galton rows (ROWS+1 bins -> binomial(ROWS,0.5))
+  const PEG_PITCH_PX     = 44;     // visual pitch between peg columns
+  const ROW_GAP_PX       = 50;     // vertical pitch between peg rows
+  const FALL_SPEED       = 26;     // px/sec downward base — slow, snowy
+  const SWAY_AMP         = 7;      // px sway amplitude during free fall
+  const SWAY_FREQ        = 0.6;    // Hz sway between peg rows
+  const STEP_NUDGE       = 0.55;   // tiny audio "plink" probability per peg row
+  const BIN_HEIGHT       = 240;    // bottom band reserved for accumulation
+  const FONT_PX          = 13;
+  const PLINK_VOL        = 0.025;  // very quiet
+  const SPAWN_MS_MIN     = 220;    // sparse spawn — snowfall, not Matrix
+  const SPAWN_MS_MAX     = 520;
+  const MAX_FALLING      = 90;
+  const COLOR_FREQ_S     = 0.012;
+  const COLOR_FREQ_T     = 0.00018;
+  const WARM = [255, 220, 175];
+  const COOL = [205, 220, 250];
 
+  // Code-flavored snippets
   const SNIPPETS = [
     "for(;;){}", "if(x){}", "=>", "fn()", "{...}", "x++",
     "0x1F", "git push", "rm -rf", "01101", "<div/>",
@@ -64,61 +69,68 @@
     "render()", "useFx", "redux", "map()", "reduce", "filter"
   ];
 
-  const cv = document.getElementById('galton');
+  const cv  = document.getElementById('galton');
   const ctx = cv.getContext('2d');
   let dpr, W, H;
-  let pegs = [];
-  let falling = [];
-  let bins = [];
-  let binBaseY = 0;
 
+  // Geometry computed in resize()
+  let cxBoard, topY, rowY = [], pegX = []; // pegX[r] = array of x positions for row r
+  let pitch, binBaseY, binStartX, binCount;
+  let bins = [];   // each: {x0,x1,glyphs:[{text,hue,xJit,yOff,age}]}
+
+  let falling = [];
+
+  // --- Audio: very soft plink ---
   let actx = null;
-  function ensureAudio(){
-    if (actx) return;
-    try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
-  }
-  function plink(strength){
+  function ensureAudio(){ if (actx) return; try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+  function plink(){
     if (!actx) return;
     const t = actx.currentTime;
     const o = actx.createOscillator();
     const g = actx.createGain();
-    const f = 380 + Math.random()*640;
-    o.type = 'triangle';
+    const f = 520 + Math.random()*420;
+    o.type = 'sine';
     o.frequency.setValueAtTime(f, t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(80, f*0.45), t+0.12);
-    const v = PLINK_VOL * Math.min(1, 0.4 + strength*0.6);
+    o.frequency.exponentialRampToValueAtTime(Math.max(120, f*0.55), t+0.18);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(v, t+0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+    g.gain.exponentialRampToValueAtTime(PLINK_VOL, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.32);
     o.connect(g).connect(actx.destination);
-    o.start(t); o.stop(t+0.2);
+    o.start(t); o.stop(t+0.36);
   }
-  addEventListener('pointerdown', ensureAudio, {once:false});
-  addEventListener('keydown',     ensureAudio, {once:false});
+  addEventListener('pointerdown', ensureAudio);
+  addEventListener('keydown',     ensureAudio);
 
+  // --- Layout ---
   function buildBoard(){
-    pegs.length = 0;
-    bins = [];
-    const cx = innerWidth * 0.5;
-    const topY = Math.max(80, innerHeight*0.18);
+    cxBoard = innerWidth * 0.5;
+    topY    = Math.max(80, innerHeight * 0.16);
     binBaseY = innerHeight - 24;
-    const bottomBoardY = innerHeight - BIN_HEIGHT - 30;
-    const usableH = bottomBoardY - topY;
-    const rowGap = Math.min(ROW_GAP_PX, usableH/(ROWS+1));
-    const pitch = Math.min(PEG_GAP_PX, (innerWidth-80)/(ROWS+1));
+
+    pitch = Math.min(PEG_PITCH_PX, (innerWidth - 80) / (ROWS + 2));
+    const rowGap = Math.min(ROW_GAP_PX, (innerHeight - BIN_HEIGHT - topY - 30) / (ROWS + 1));
+
+    rowY = [];
+    pegX = [];
     for (let r=0; r<ROWS; r++){
-      const y = topY + (r+1)*rowGap;
+      const y = topY + (r+1) * rowGap;
+      rowY.push(y);
+      // row r has r+1 pegs centered around cxBoard, pitch apart
       const count = r+1;
-      const xStart = cx - (count-1)*0.5*pitch;
-      for (let i=0;i<count;i++){
-        pegs.push({x:xStart + i*pitch, y, r:4});
-      }
+      const xs = [];
+      const start = cxBoard - (count-1) * 0.5 * pitch;
+      for (let i=0; i<count; i++) xs.push(start + i*pitch);
+      pegX.push(xs);
     }
-    const startX = cx - (ROWS)*0.5*pitch - pitch*0.5;
-    for (let i=0; i<=ROWS; i++){
-      const x0 = startX + i*pitch;
+
+    // Bins: ROWS+1 of them, centered under the bottom row of pegs
+    binCount = ROWS + 1;
+    binStartX = cxBoard - (binCount-1) * 0.5 * pitch - pitch * 0.5;
+    bins = [];
+    for (let i=0; i<binCount; i++){
+      const x0 = binStartX + i*pitch;
       const x1 = x0 + pitch;
-      bins.push({ x0, x1, glyphs: [], stackY: binBaseY });
+      bins.push({ x0, x1, glyphs: [] });
     }
   }
 
@@ -128,7 +140,7 @@
     cv.width  = Math.floor(W*dpr);
     cv.height = Math.floor(H*dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.font = FONT_PX+"px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    ctx.font = FONT_PX + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
     buildBoard();
@@ -136,118 +148,162 @@
   resize();
   addEventListener('resize', resize);
 
+  // --- Glyph spawning ---
+  // Each glyph carries:
+  //   k: integer left/right step count so far (0..ROWS)
+  //   r: integer "row reached" — pegs are visited at rows 0..ROWS-1
+  //   x,y: current position
+  //   sway phase
+  //   landed: bool
   function spawn(){
     if (falling.length >= MAX_FALLING) return;
     const text = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
-    const cx = innerWidth*0.5;
-    const x  = cx + (Math.random()-0.5)*60;
-    const y  = -20;
-    const vx = (Math.random()-0.5)*0.6;
-    const vy = 0.6 + Math.random()*0.6;
-    const tone = Math.random();
-    falling.push({ text, x, y, vx, vy, hue:tone, lastHit:0 });
+    const x = cxBoard + (Math.random()-0.5)*16;
+    const y = topY - 30 - Math.random()*60;
+    falling.push({
+      text,
+      x, y,
+      vy: FALL_SPEED * (0.85 + Math.random()*0.3),
+      k: 0,                       // sum of left(-1)/right(+1) decisions
+      nextRow: 0,                 // next peg row to evaluate when crossing it
+      hue: Math.random(),
+      swayPhase: Math.random()*Math.PI*2,
+      birth: performance.now(),
+      lastPlink: 0
+    });
   }
   let lastSpawn = 0;
+  let nextSpawnIn = SPAWN_MS_MIN;
 
-  function tickPhysics(now){
-    for (let k=falling.length-1; k>=0; k--){
-      const g = falling[k];
-      g.vy += GRAVITY*0.06;
-      g.x  += g.vx;
-      g.y  += g.vy;
+  // Snap each glyph onto the Galton lattice as it crosses a peg row.
+  // After ROWS decisions, k ranges in [-ROWS .. +ROWS] in steps of 2, so the
+  // bin index = (k + ROWS) / 2 follows Binomial(ROWS, 0.5) -> Gaussian-shaped pile.
+  function tickPhysics(dt, now){
+    for (let i=falling.length-1; i>=0; i--){
+      const g = falling[i];
 
-      const gr = 6;
-      for (let p=0; p<pegs.length; p++){
-        const peg = pegs[p];
-        const dx = g.x - peg.x;
-        const dy = g.y - peg.y;
-        const rr = peg.r + gr;
-        if (dx*dx + dy*dy < rr*rr){
-          const d = Math.max(0.001, Math.sqrt(dx*dx+dy*dy));
-          const nx = dx/d, ny = dy/d;
-          g.x = peg.x + nx*rr;
-          g.y = peg.y + ny*rr;
-          const vn = g.vx*nx + g.vy*ny;
-          if (vn < 0){
-            g.vx = (g.vx - 2*vn*nx) * RESTITUTION;
-            g.vy = (g.vy - 2*vn*ny) * RESTITUTION;
-            const dir = Math.random() < 0.5 ? -1 : 1;
-            g.vx = g.vx*FRICTION_X + dir*KICK;
-            g.vy = Math.max(g.vy, 0.6);
-            if (now - g.lastHit > 40){
-              g.lastHit = now;
-              plink(Math.min(1, Math.abs(vn)/3));
-            }
+      // gentle vertical fall + horizontal sway between rows
+      g.y += g.vy * dt;
+      const sway = Math.sin((now*0.001)*SWAY_FREQ*Math.PI*2 + g.swayPhase) * SWAY_AMP;
+
+      // current x is determined by lattice + sway:
+      //   before any peg crossed -> centered
+      //   after r pegs -> centered + (k * pitch/2) (because each row offsets by half pitch)
+      // We render with a soft blend between the current lattice anchor and the next one.
+      const anchorX = cxBoard + g.k * (pitch * 0.5);
+
+      // Decide a new step when crossing the next peg row
+      if (g.nextRow < ROWS && g.y >= rowY[g.nextRow]){
+        // coin flip: -1 (left) or +1 (right)
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        g.k += dir;
+        g.nextRow++;
+        // optional, sparse plink
+        if (Math.random() < STEP_NUDGE){
+          if (now - g.lastPlink > 90){
+            g.lastPlink = now;
+            plink();
           }
         }
       }
 
-      if (g.y >= binBaseY - 8){
-        let bIdx = bins.findIndex(b => g.x >= b.x0 && g.x < b.x1);
-        if (bIdx < 0){
-          if (g.x < bins[0].x0) bIdx = 0;
-          else bIdx = bins.length-1;
+      // Final x: lattice anchor + small sway + small randomized jitter
+      g.x = anchorX + sway;
+
+      // Land in a bin
+      if (g.y >= binBaseY - 10){
+        // bin index from final k after ROWS steps. If somehow nextRow < ROWS
+        // (e.g. window very short), still compute by clamping k to [-ROWS,+ROWS].
+        let kFinal = g.k;
+        if (kFinal < -ROWS) kFinal = -ROWS;
+        if (kFinal >  ROWS) kFinal =  ROWS;
+        // map even/odd: after ROWS coin flips, kFinal has same parity as ROWS.
+        // bin = (kFinal + ROWS) / 2 ; if parity mismatch (early landing), nudge.
+        if (((kFinal + ROWS) & 1) !== 0){
+          kFinal += (Math.random()<0.5 ? -1 : 1);
+          if (kFinal < -ROWS) kFinal = -ROWS;
+          if (kFinal >  ROWS) kFinal =  ROWS;
         }
+        const bIdx = Math.max(0, Math.min(binCount-1, (kFinal + ROWS) >> 1));
         const b = bins[bIdx];
-        b.glyphs.push({ text:g.text, hue:g.hue });
-        if (now - g.lastHit > 40){ plink(0.4); }
-        falling.splice(k,1);
+        b.glyphs.push({
+          text: g.text,
+          hue:  g.hue,
+          xJit: (Math.random()-0.5) * (pitch*0.55),
+          age:  0
+        });
+        falling.splice(i,1);
         continue;
       }
 
-      if (g.x < -40 || g.x > innerWidth+40 || g.y > innerHeight+40){
-        falling.splice(k,1);
+      if (g.y > innerHeight + 40 || g.x < -60 || g.x > innerWidth + 60){
+        falling.splice(i,1);
       }
     }
   }
 
+  // --- Render ---
   function lerp(a,b,t){return a+(b-a)*t;}
-  function rgbFor(h){
-    const r = Math.round(lerp(WARM[0], COOL[0], h));
-    const g = Math.round(lerp(WARM[1], COOL[1], h));
-    const b = Math.round(lerp(WARM[2], COOL[2], h));
+  function rgbFor(hue, t, x, y){
+    const m = 0.5 + 0.5*Math.sin((x+y)*COLOR_FREQ_S + t*COLOR_FREQ_T*6.283 + hue*6.283);
+    const r = Math.round(lerp(WARM[0], COOL[0], m));
+    const g = Math.round(lerp(WARM[1], COOL[1], m));
+    const b = Math.round(lerp(WARM[2], COOL[2], m));
     return r+","+g+","+b;
   }
 
   function draw(now){
+    // Long, gentle trail like the GoL canvas
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = 'rgba(0,0,0,'+TRAIL_FADE+')';
     ctx.fillRect(0,0,W,H);
     ctx.globalCompositeOperation = 'source-over';
 
+    // Falling glyphs
     for (let i=0;i<falling.length;i++){
       const g = falling[i];
-      const a = FALL_GLYPH_ALPHA * (0.7 + 0.3*Math.sin((g.x+g.y)*0.02 + now*0.001));
-      ctx.fillStyle = 'rgba('+rgbFor(g.hue)+','+a.toFixed(3)+')';
+      // fade-in over first ~0.6s of life so they "appear" out of the dark
+      const lifeIn = Math.min(1, (now - g.birth) / 600);
+      const a = FALL_ALPHA * lifeIn * (0.85 + 0.15*Math.sin(now*0.0008 + g.swayPhase));
+      ctx.fillStyle = 'rgba('+rgbFor(g.hue, now, g.x, g.y)+','+a.toFixed(3)+')';
       ctx.fillText(g.text, g.x, g.y);
     }
 
+    // Accumulated pile — soft, jittered, age-faded for a snow-mound feel
     for (let i=0;i<bins.length;i++){
       const b = bins[i];
       const cx = (b.x0 + b.x1) * 0.5;
       for (let j=0;j<b.glyphs.length;j++){
-        const gy = binBaseY - j*(FONT_PX+2);
-        if (gy < 0) break;
         const gd = b.glyphs[j];
-        const a = BIN_GLYPH_ALPHA * (0.8 + 0.2*Math.sin((cx+gy)*0.01 + now*0.0006));
-        ctx.fillStyle = 'rgba('+rgbFor(gd.hue)+','+a.toFixed(3)+')';
-        ctx.fillText(gd.text, cx, gy);
+        gd.age = (gd.age||0) + 1;
+        const gy = binBaseY - j*(FONT_PX+1);
+        if (gy < 0) break;
+        const ageFade = Math.min(1, gd.age / 30);     // fade in
+        const a = SETTLED_ALPHA * ageFade *
+                  (0.82 + 0.18*Math.sin((cx+gy)*0.012 + now*0.0005));
+        ctx.fillStyle = 'rgba('+rgbFor(gd.hue, now, cx+gd.xJit, gy)+','+a.toFixed(3)+')';
+        ctx.fillText(gd.text, cx + gd.xJit*0.5, gy);
       }
     }
 
+    // Faint baseline glow
     const grd = ctx.createLinearGradient(0, binBaseY-2, 0, binBaseY+30);
-    grd.addColorStop(0, 'rgba(255,220,170,'+(PEAK_ALPHA*0.35).toFixed(3)+')');
-    grd.addColorStop(1, 'rgba(255,220,170,0)');
+    grd.addColorStop(0, 'rgba(255,225,185,'+(PEAK_ALPHA*0.30).toFixed(3)+')');
+    grd.addColorStop(1, 'rgba(255,225,185,0)');
     ctx.fillStyle = grd;
     ctx.fillRect(0, binBaseY-2, W, 32);
   }
 
+  let last = performance.now();
   function loop(now){
-    if (now - lastSpawn >= SPAWN_MS){
+    const dt = Math.min(0.05, (now - last)/1000);
+    last = now;
+    if (now - lastSpawn >= nextSpawnIn){
       lastSpawn = now;
+      nextSpawnIn = SPAWN_MS_MIN + Math.random()*(SPAWN_MS_MAX-SPAWN_MS_MIN);
       spawn();
     }
-    tickPhysics(now);
+    tickPhysics(dt, now);
     draw(now);
     requestAnimationFrame(loop);
   }

@@ -44,7 +44,7 @@
 
   const FALL_SPEED       = 42;        // px/sec — purposeful but snowy
   const FALL_SPEED_VAR   = 0.30;
-  const PILE_GRAVITY     = 140;       // px/sec^2 once a flake is "below the board"
+  const PILE_GRAVITY     = 0;         // (unused) constant-velocity pile descent — no acceleration
   const PILE_MAX_VY      = 380;       // terminal falling speed in the pile zone
 
   const SWAY_AMP         = 6;
@@ -54,7 +54,7 @@
   const ROT_PERIOD_MIN   = 3.0;
   const ROT_PERIOD_MAX   = 7.0;
 
-  const PILE_REST_ROT    = 0.26;      // ±15° resting rotation snapped at land
+  const PILE_REST_ROT    = 0;         // pile glyphs render axis-aligned for sharp legibility
   const PILE_X_JITTER    = 0.55;      // fraction of pitch
   const STACK_STEP       = 13;        // typical stack increment in px (similar to FONT_PX)
   const STACK_VARIANCE   = 4;         // ± px noise per stack so heights vary
@@ -365,15 +365,15 @@
       const g = falling[i];
 
       if (g.piling){
-        // Constant-ish gravity until we hit the resting y for this bin's current top of stack
-        g.vy = Math.min(PILE_MAX_VY, g.vy + PILE_GRAVITY * dt);
+        // Constant-velocity descent at the flake's existing fall speed — no acceleration spike,
+        // no gravity. The flake just keeps falling at vy until it hits the resting y for the bin.
         g.y += g.vy * dt;
         // Resolve resting target each step (the column may grow if many flakes stack quickly)
         const b = bins[g.pileBin];
         const restY = restingYFor(b);
         if (g.y >= restY){
           g.y = restY;
-          // Commit to pile
+          // Commit to pile — axis-aligned rotation (PILE_REST_ROT=0) for sharpest legibility
           const restRot = (Math.random()*2-1) * PILE_REST_ROT;
           b.glyphs.push({
             text: g.text,
@@ -468,8 +468,14 @@
       const tSec = (now - g.birth) * 0.001;
       let rot = Math.sin(tSec / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
       if (g.piling){
-        // Rotation eases to 0 quickly while it's plonking down through the bin
-        rot *= 0.3;
+        // Continuously ease rotation toward 0 as the flake descends through the bin,
+        // so its orientation arrives at exactly axis-aligned when it lands.
+        const b = bins[g.pileBin];
+        const restY = restingYFor(b);
+        const span = Math.max(1, restY - rowY[ROWS-1]);
+        const prog = Math.min(1, Math.max(0, (g.y - rowY[ROWS-1]) / span));
+        // quadratic ease-out so most of the un-rotation happens in the last third
+        rot *= (1 - prog) * (1 - prog);
       }
       fctx.save();
       fctx.translate(g.x, g.y);

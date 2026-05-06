@@ -79,11 +79,14 @@
   // ---- Landing alpha ramp: smooth opacity transition from falling -> pile ----
   const LANDING_FADE_MS    = 600;     // duration of the alpha ramp from in-flight to pile
 
-  // ---- Idle auto-drift: when the cursor stops moving and the pile is full near the spout, ----
-  // ---- the spout slowly oscillates across the viewport so the screen fills evenly. ----------
-  const IDLE_DRIFT_DELAY_MS  = 2200;   // how long the cursor must be still before drift kicks in
-  const IDLE_DRIFT_PERIOD_S  = 32;     // seconds for one full sweep across the viewport
-  const IDLE_DRIFT_TRIGGER_PX = 90;    // drift only when pile-top near spout is within this y of viewport top
+  // ---- Pile-pressure auto-drift: when the pile under the spout reaches near the top, ----
+  // ---- the spout slides sideways to fill empty columns. Engages regardless of cursor    ----
+  // ---- motion (cursor still biases direction, but does not block drift).                ----
+  const IDLE_DRIFT_DELAY_MS  = 2200;   // (legacy) ignored by current drift trigger
+  const DRIFT_PERIOD_S       = 28;     // seconds for one full sweep across the viewport
+  const DRIFT_TRIGGER_PX     = 140;    // pile-top within this y of viewport top engages drift
+  const DRIFT_FULL_PX        = 50;     // pile-top within this y of viewport top forces full drift weight
+  const DRIFT_CURSOR_BIAS    = 0.25;   // how much cursor still pulls when drift active (0 = ignore cursor)
 
   const PHOTO_SAT_BOOST  = 0.85;
   const PHOTO_LIGHT_BIAS = 0.12;
@@ -805,14 +808,25 @@
     //       the spout slowly oscillates across the viewport so the screen fills evenly.
     const halfSpan = (binCount-1) * 0.5 * pitch + pitch * 0.5 + 20;
     const cursorTarget = Math.max(halfSpan, Math.min(innerWidth - halfSpan, cursorX));
-    const idleFor = now - lastCursorMoveAt;
+    // Pressure-based drift: as the pile under the spout climbs above DRIFT_TRIGGER_PX,
+    // the spout starts sliding sideways. At DRIFT_FULL_PX the cursor is mostly overridden.
     const pileTopHere = restingYFor(cxBoard); // y of pile top under current spout
+    let driftWeight = 0;
+    if (pileTopHere < DRIFT_TRIGGER_PX){
+      const range = DRIFT_TRIGGER_PX - DRIFT_FULL_PX;
+      const t = (DRIFT_TRIGGER_PX - pileTopHere) / Math.max(1, range);
+      driftWeight = Math.max(0, Math.min(1, t));
+    }
     let target;
-    if (idleFor > IDLE_DRIFT_DELAY_MS && pileTopHere < IDLE_DRIFT_TRIGGER_PX){
-      // sin-oscillate target across the usable width; phase 0 starts at center.
-      const phaseSec = (idleFor - IDLE_DRIFT_DELAY_MS) * 0.001;
-      const tPhase = Math.sin(phaseSec * (2*Math.PI / IDLE_DRIFT_PERIOD_S));
-      target = innerWidth * 0.5 + tPhase * (innerWidth * 0.5 - halfSpan);
+    if (driftWeight > 0){
+      // sin-oscillate across the usable width; phase advances on a wall clock so
+      // drift keeps moving even as the user wiggles the cursor.
+      const phaseSec = now * 0.001;
+      const tPhase = Math.sin(phaseSec * (2*Math.PI / DRIFT_PERIOD_S));
+      const driftTarget = innerWidth * 0.5 + tPhase * (innerWidth * 0.5 - halfSpan);
+      // Mix: at full drift, cursor still contributes DRIFT_CURSOR_BIAS so it isn't dead.
+      const cursorMix = (1 - driftWeight) + driftWeight * DRIFT_CURSOR_BIAS;
+      target = driftTarget * (1 - cursorMix) + cursorTarget * cursorMix;
     } else {
       target = cursorTarget;
     }

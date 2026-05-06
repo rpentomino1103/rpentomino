@@ -36,8 +36,8 @@
 <script>
 (()=>{
   // ---------- Tunables ----------
-  const GLYPH_ALPHA      = 0.13;
-  const TRAIL_FADE       = 0.07;      // a touch heavier to keep blur smooth at higher cadence
+  const GLYPH_ALPHA      = 0.18;      // bumped so overlapping flakes additively brighten the center of the Galton bell
+  const TRAIL_FADE       = 0.18;      // faster trail dissipation = crisper letterforms (especially helps emoji legibility)
   const ROWS             = 11;
   const PEG_PITCH_PX     = 44;
   const ROW_GAP_PX       = 50;
@@ -55,7 +55,7 @@
   const ROT_PERIOD_MAX   = 7.0;
 
   const PILE_REST_ROT    = 0.50;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 0.92;      // pile glyphs are opaque-feeling solid clippings
+  const PILE_ALPHA       = 0.78;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
   const PILE_STROKE_ALPHA= 0.75;      // dark stroke around pile glyph text for definition
   const PILE_X_JITTER    = 0.55;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
@@ -95,7 +95,7 @@
   // emoji-laden teen-texting nonsense. They render at lower alpha so they feel ghostly and
   // ephemeral against the math/code lattice.
   const GHOST_PROBABILITY  = 0.012;            // ~1.2% chance per spawn
-  const GHOST_ALPHA_MUL    = 0.45;             // how much fainter ghosts render than other glyphs
+  const GHOST_ALPHA_MUL    = 0.65;             // ghostly but readable — emoji and teen-text drops should be visible at a glance
   const FONT_SIZE_GHOST    = FONT_PX + 3;      // a touch larger so emoji read at any size
   const GHOST_FONT_FAMILY  = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif';
 
@@ -995,9 +995,11 @@
         const psa = gd.ghost ? PILE_STROKE_ALPHA * GHOST_ALPHA_MUL : PILE_STROKE_ALPHA;
         pctx.strokeStyle = 'rgba(0,0,0,' + psa.toFixed(3) + ')';
         pctx.strokeText(gd.text, 0, 0);
-        // Photo-sampled fill at high alpha — solid-feeling code snippet
+        // Negative-photo fill — pile glyphs use the INVERTED photo color, so as the screen
+        // fills with scratchings the cumulative result is a faint photo-negative emerging
+        // through the rain of code, with the original photograph still ghosting through gaps.
         const pa = gd.ghost ? PILE_ALPHA * GHOST_ALPHA_MUL : PILE_ALPHA;
-        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+pa.toFixed(3)+')';
+        pctx.fillStyle = 'rgba('+(255-c[0])+','+(255-c[1])+','+(255-c[2])+','+pa.toFixed(3)+')';
         pctx.fillText(gd.text, 0, 0);
         pctx.restore();
       }

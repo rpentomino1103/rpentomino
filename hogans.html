@@ -24,7 +24,7 @@
     pointer-events: none; mix-blend-mode: screen;
   }
   canvas#fall { z-index: 9998; }
-  canvas#pile { z-index: 9999; mix-blend-mode: lighter; }
+  canvas#pile { z-index: 9999; mix-blend-mode: normal; }
   h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
@@ -55,8 +55,8 @@
   const ROT_PERIOD_MAX   = 7.0;
 
   const PILE_REST_ROT    = 0.50;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 0.78;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
-  const PILE_STROKE_ALPHA= 0.75;      // dark stroke around pile glyph text for definition
+  const PILE_ALPHA       = 0.92;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
+  const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
   const PILE_X_JITTER    = 0.55;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
   const SLOPE_THRESHOLD  = 0.5;       // fraction of STACK_STEP that triggers a slide
@@ -71,7 +71,7 @@
 
   const SPAWN_MS_MIN     = 110;       // doubled cadence
   const SPAWN_MS_MAX     = 260;
-  const MAX_FALLING      = 180;
+  const MAX_FALLING      = 240;
   const FADE_IN_MS       = 700;
 
   const CURSOR_TRACK_LERP = 0.06;     // per-frame ease toward cursor x
@@ -590,7 +590,15 @@
     r = lum + (r - lum) * PHOTO_SAT_BOOST;
     g = lum + (g - lum) * PHOTO_SAT_BOOST;
     b = lum + (b - lum) * PHOTO_SAT_BOOST;
-    return [r|0, g|0, b|0];
+    // Override: collapse photo color to a near-black dark-gray field so accumulating
+    // glyphs build up the dense, almost-monochrome code-overlay look (variation kept
+    // small so the texture has subtle life, not full uniformity).
+    const baseGray = 26 + (lum * 0.06);            // ~26-42 range, biased by photo luminance
+    const jitter = (Math.random() - 0.5) * 6;      // ±3 px-grade noise per glyph
+    const rr = Math.max(8, Math.min(56, baseGray + jitter + 1));
+    const gg = Math.max(8, Math.min(56, baseGray + jitter));
+    const bb = Math.max(8, Math.min(56, baseGray + jitter + 2));
+    return [rr|0, gg|0, bb|0];
   }
 
   // ---------- Audio ----------

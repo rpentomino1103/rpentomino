@@ -18,8 +18,7 @@
     object-fit: cover; object-position: center;
     user-select: none; -webkit-user-drag: none; pointer-events: none;
   }
-  /* Two stacked canvases: one for falling flakes (with trail-blur),
-     one for the settled pile (cleared + redrawn fresh each frame). */
+  /* Two stacked canvases: falling flakes (with motion-blur) and the pile (cleared each frame). */
   canvas.layer {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
     pointer-events: none; mix-blend-mode: screen;
@@ -38,28 +37,40 @@
 (()=>{
   // ---------- Tunables ----------
   const GLYPH_ALPHA      = 0.13;
-  const TRAIL_FADE       = 0.05;
+  const TRAIL_FADE       = 0.07;      // a touch heavier to keep blur smooth at higher cadence
   const ROWS             = 11;
   const PEG_PITCH_PX     = 44;
   const ROW_GAP_PX       = 50;
-  const FALL_SPEED       = 26;
+
+  const FALL_SPEED       = 42;        // px/sec — purposeful but snowy
   const FALL_SPEED_VAR   = 0.30;
+  const PILE_GRAVITY     = 140;       // px/sec^2 once a flake is "below the board"
+  const PILE_MAX_VY      = 380;       // terminal falling speed in the pile zone
+
   const SWAY_AMP         = 6;
   const SWAY_FREQ_HZ     = 0.18;
   const ROT_AMP_MIN      = 0.10;
   const ROT_AMP_MAX      = 0.18;
   const ROT_PERIOD_MIN   = 3.0;
   const ROT_PERIOD_MAX   = 7.0;
-  const BIN_HEIGHT       = 240;
+
+  const PILE_REST_ROT    = 0.26;      // ±15° resting rotation snapped at land
+  const PILE_X_JITTER    = 0.55;      // fraction of pitch
+  const STACK_STEP       = 13;        // typical stack increment in px (similar to FONT_PX)
+  const STACK_VARIANCE   = 4;         // ± px noise per stack so heights vary
+
   const FONT_PX          = 13;
   const PLINK_VOL        = 0.022;
-  const STEP_NUDGE_PROB  = 0.45;
+  const STEP_NUDGE_PROB  = 0.40;
   const PLINK_COOLDOWN   = 110;
-  const SPAWN_MS_MIN     = 220;
-  const SPAWN_MS_MAX     = 520;
-  const MAX_FALLING      = 100;
-  const FADE_IN_MS       = 800;
-  const LAND_GLIDE_MS    = 700;
+
+  const SPAWN_MS_MIN     = 110;       // doubled cadence
+  const SPAWN_MS_MAX     = 260;
+  const MAX_FALLING      = 180;
+  const FADE_IN_MS       = 700;
+
+  const CURSOR_TRACK_LERP = 0.06;     // per-frame ease toward cursor x
+
   const PHOTO_SAT_BOOST  = 0.85;
   const PHOTO_LIGHT_BIAS = 0.12;
   const PHOTO_BLUR_PX    = 6;
@@ -150,8 +161,12 @@
   const pctx = pile.getContext('2d');
   let dpr, W, H;
 
-  let cxBoard, topY, rowY = [], pitch, rowGap;
+  // Geometry — recomputed every frame from a slowly-tracked cxBoard
+  let cxBoard, cxBoardTarget;
+  let topY, rowY = [], pitch, rowGap;
   let binBaseY, binStartX, binCount;
+  // Per-bin pile arrays. Stored x is absolute (relative to viewport, not board).
+  // We keep pile glyphs anchored to viewport so the lattice can scoot underneath.
   let bins = [];
   let falling = [];
 
@@ -211,6 +226,7 @@
     return [r|0, g|0, b|0];
   }
 
+  // ---------- Audio ----------
   let actx = null;
   function ensureAudio(){ if (actx) return; try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
   function plink(){
@@ -231,20 +247,42 @@
   addEventListener('pointerdown', ensureAudio);
   addEventListener('keydown',     ensureAudio);
 
+  // ---------- Cursor tracking ----------
+  // The whole peg lattice translates so its center column sits under the cursor.
+  let cursorX = innerWidth * 0.5;
+  addEventListener('pointermove', (e) => {
+    cursorX = e.clientX;
+    ensureAudio();
+  });
+
+  // ---------- Layout ----------
   function buildBoard(){
-    cxBoard = innerWidth * 0.5;
+    cxBoard       = innerWidth * 0.5;
+    cxBoardTarget = innerWidth * 0.5;
     topY    = Math.max(80, innerHeight * 0.16);
     binBaseY = innerHeight - 24;
     pitch  = Math.min(PEG_PITCH_PX, (innerWidth - 80) / (ROWS + 2));
-    rowGap = Math.min(ROW_GAP_PX, (innerHeight - BIN_HEIGHT - topY - 30) / (ROWS + 1));
+    rowGap = Math.min(ROW_GAP_PX, (innerHeight - 240 - topY - 30) / (ROWS + 1));
     rowY = [];
     for (let r=0; r<ROWS; r++) rowY.push(topY + (r+1) * rowGap);
     binCount = ROWS + 1;
+    rebuildBins();
+  }
+  function rebuildBins(){
     binStartX = cxBoard - (binCount-1) * 0.5 * pitch - pitch * 0.5;
-    bins = [];
-    for (let i=0; i<binCount; i++){
-      const x0 = binStartX + i*pitch;
-      bins.push({ x0, x1: x0 + pitch, glyphs: [] });
+    if (!bins.length){
+      bins = [];
+      for (let i=0; i<binCount; i++){
+        const x0 = binStartX + i*pitch;
+        bins.push({ x0, x1: x0 + pitch, glyphs: [] });
+      }
+    } else {
+      // shift existing bins horizontally with the lattice
+      for (let i=0; i<binCount; i++){
+        const x0 = binStartX + i*pitch;
+        bins[i].x0 = x0;
+        bins[i].x1 = x0 + pitch;
+      }
     }
   }
   function resize(){
@@ -266,6 +304,7 @@
   resize();
   addEventListener('resize', resize);
 
+  // ---------- Spawning ----------
   function spawn(){
     if (falling.length >= MAX_FALLING) return;
     const text = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
@@ -279,6 +318,9 @@
       nextAnchorX: cxBoard,
       tStartY: y,
       tEndY:   rowY[0],
+      // Lattice anchor offsets (relative to cxBoard) so the lattice can shift mid-fall
+      prevAnchorOffX: 0,
+      nextAnchorOffX: 0,
       nextRow: 0,
       hue: Math.random(),
       swayPhase: Math.random()*Math.PI*2,
@@ -288,12 +330,10 @@
       rotDir:    Math.random()<0.5 ? -1 : 1,
       birth: performance.now(),
       lastPlink: 0,
-      landing: false,
-      landStartT: 0,
-      landFromX: 0, landFromY: 0,
-      landToX: 0, landToY: 0,
-      landBin: -1,
-      _landT: 0
+      // Pile-physics state
+      piling: false,         // true once below the last peg row
+      pileBin: -1,
+      pileX: 0               // anchored-to-bin x at pile time (won't sway anymore)
     });
   }
   let lastSpawn = 0;
@@ -305,30 +345,55 @@
     return 0.5 - 0.5*Math.cos(t*Math.PI);
   }
 
+  // The vertical y at which a flake "rests" when it lands in bin b — top of stack.
+  function restingYFor(b){
+    const top = (b.glyphs.length === 0)
+      ? binBaseY
+      : (b.glyphs[b.glyphs.length-1].y - STACK_STEP - (Math.random()*2-1)*STACK_VARIANCE);
+    return top;
+  }
+
+  // ---------- Physics ----------
   function tickPhysics(dt, now){
+    // ease cxBoard toward cursor x — clamp so the lattice can't leave the screen
+    const halfSpan = (binCount-1) * 0.5 * pitch + pitch * 0.5 + 20;
+    const target = Math.max(halfSpan, Math.min(innerWidth - halfSpan, cursorX));
+    cxBoard += (target - cxBoard) * CURSOR_TRACK_LERP;
+    rebuildBins(); // bins follow lattice
+
     for (let i=falling.length-1; i>=0; i--){
       const g = falling[i];
 
-      if (g.landing){
-        const t = ease(Math.min(1, (now - g.landStartT) / LAND_GLIDE_MS));
-        g.x = g.landFromX + (g.landToX - g.landFromX) * t;
-        g.y = g.landFromY + (g.landToY - g.landFromY) * t;
-        g._landT = t;
-        if (t >= 1){
-          const b = bins[g.landBin];
-          b.glyphs.push({ text: g.text, x: g.landToX, y: g.landToY, bornAt: now });
-          falling.splice(i, 1);
+      if (g.piling){
+        // Constant-ish gravity until we hit the resting y for this bin's current top of stack
+        g.vy = Math.min(PILE_MAX_VY, g.vy + PILE_GRAVITY * dt);
+        g.y += g.vy * dt;
+        // Resolve resting target each step (the column may grow if many flakes stack quickly)
+        const b = bins[g.pileBin];
+        const restY = restingYFor(b);
+        if (g.y >= restY){
+          g.y = restY;
+          // Commit to pile
+          const restRot = (Math.random()*2-1) * PILE_REST_ROT;
+          b.glyphs.push({
+            text: g.text,
+            x: g.pileX,
+            y: g.y,
+            rot: restRot
+          });
+          falling.splice(i,1);
         }
         continue;
       }
 
+      // ---- Free fall + lattice transitions ----
       g.y += g.vy * dt;
 
       while (g.nextRow < ROWS && g.y >= rowY[g.nextRow]){
-        g.prevAnchorX = g.nextAnchorX;
+        g.prevAnchorOffX = g.nextAnchorOffX;
         const dir = Math.random() < 0.5 ? -1 : 1;
         g.k += dir;
-        g.nextAnchorX = cxBoard + g.k * (pitch * 0.5);
+        g.nextAnchorOffX = g.k * (pitch * 0.5);
         g.tStartY = rowY[g.nextRow];
         g.tEndY   = (g.nextRow+1 < ROWS) ? rowY[g.nextRow+1] : (rowY[ROWS-1] + rowGap*0.6);
         g.nextRow++;
@@ -338,13 +403,15 @@
         }
       }
 
+      // Continuous interpolated x along current transition, anchored to (live) cxBoard
       const denom = Math.max(0.001, g.tEndY - g.tStartY);
       const tt = ease((g.y - g.tStartY) / denom);
-      const baseX = g.prevAnchorX + (g.nextAnchorX - g.prevAnchorX) * tt;
+      const offX = g.prevAnchorOffX + (g.nextAnchorOffX - g.prevAnchorOffX) * tt;
       const sway  = Math.sin(now*0.001 * SWAY_FREQ_HZ * Math.PI*2 + g.swayPhase) * SWAY_AMP;
-      g.x = baseX + sway;
+      g.x = cxBoard + offX + sway;
 
-      if (g.nextRow >= ROWS && !g.landing){
+      // Once past the last peg row, switch to pile-falling physics
+      if (g.nextRow >= ROWS && !g.piling){
         let kFinal = g.k;
         if (kFinal < -ROWS) kFinal = -ROWS;
         if (kFinal >  ROWS) kFinal =  ROWS;
@@ -355,19 +422,29 @@
         }
         const bIdx = Math.max(0, Math.min(binCount-1, (kFinal + ROWS) >> 1));
         const b = bins[bIdx];
-        const slotX = (b.x0 + b.x1) * 0.5;
-        const slotY = binBaseY - b.glyphs.length * (FONT_PX+1);
-        g.landing      = true;
-        g.landStartT   = now;
-        g.landFromX    = g.x;
-        g.landFromY    = g.y;
-        g.landToX      = slotX;
-        g.landToY      = slotY;
-        g.landBin      = bIdx;
+        const cx = (b.x0 + b.x1) * 0.5;
+        // jitter inside the bin so the pile looks like a junk heap, not a stack
+        g.pileX  = cx + (Math.random()-0.5) * (pitch * PILE_X_JITTER);
+        g.x      = g.pileX;
+        g.pileBin = bIdx;
+        g.piling = true;
       }
 
       if (g.y > innerHeight + 120 || g.x < -100 || g.x > innerWidth + 100){
         falling.splice(i,1);
+      }
+    }
+
+    // Trim pile if any column would grow past the top of the bin region
+    for (let bi=0; bi<bins.length; bi++){
+      const b = bins[bi];
+      // Discard from the bottom (oldest) when stack height exceeds limit
+      const maxStack = innerHeight - 120;
+      while (b.glyphs.length && (binBaseY - b.glyphs[b.glyphs.length-1].y) > maxStack){
+        b.glyphs.shift();
+        // re-base remaining stack so it stays anchored to binBaseY (visually shift down)
+        const drop = STACK_STEP;
+        for (let j=0;j<b.glyphs.length;j++) b.glyphs[j].y += drop;
       }
     }
   }
@@ -390,9 +467,9 @@
       const c = samplePhoto(g.x, g.y);
       const tSec = (now - g.birth) * 0.001;
       let rot = Math.sin(tSec / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
-      if (g.landing){
-        const damp = 1 - (g._landT || 0);
-        rot *= damp*damp;
+      if (g.piling){
+        // Rotation eases to 0 quickly while it's plonking down through the bin
+        rot *= 0.3;
       }
       fctx.save();
       fctx.translate(g.x, g.y);
@@ -409,10 +486,14 @@
       const b = bins[i];
       for (let j=0;j<b.glyphs.length;j++){
         const gd = b.glyphs[j];
-        if (gd.y < 0) break;
+        if (gd.y < -20) continue;
         const c = samplePhoto(gd.x, gd.y);
+        pctx.save();
+        pctx.translate(gd.x, gd.y);
+        pctx.rotate(gd.rot);
         pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+GLYPH_ALPHA.toFixed(3)+')';
-        pctx.fillText(gd.text, gd.x, gd.y);
+        pctx.fillText(gd.text, 0, 0);
+        pctx.restore();
       }
     }
   }

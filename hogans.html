@@ -26,6 +26,45 @@
   canvas#fall { z-index: 9998; }
   canvas#pile { z-index: 9999; mix-blend-mode: normal; }
   h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  /* ---- Visual frame: scrim + grain + vignette + caption ---- */
+  .scrim, .grain, .vignette {
+    position: fixed; inset: 0;
+    pointer-events: none;
+  }
+  .scrim {
+    z-index: 2;
+    background:
+      radial-gradient(circle at 50% 30%, rgba(255,255,255,0.04), rgba(255,255,255,0) 32%),
+      linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.36));
+  }
+  .vignette {
+    z-index: 10000;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0) 45%,
+      rgba(0,0,0,0.18) 75%,
+      rgba(0,0,0,0.42) 100%);
+  }
+  .grain {
+    z-index: 10001;
+    opacity: 0.10;
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
+  }
+  .caption {
+    position: fixed;
+    left: max(18px, env(safe-area-inset-left));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: 10002;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-size: 10px;
+    line-height: 1.55;
+    color: rgba(232,238,248,0.55);
+    text-shadow: 0 1px 14px rgba(0,0,0,0.85);
+    pointer-events: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .caption strong { font-weight: 600; opacity: 0.92; letter-spacing: 0.14em; }
 </style>
 </head>
 <body>
@@ -33,6 +72,10 @@
 <img class="bg" id="bgimg" src="/photos/hogans.jpg" alt="" crossorigin="anonymous" />
 <canvas id="fall" class="layer"></canvas>
 <canvas id="pile" class="layer"></canvas>
+<div class="scrim" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="caption" aria-hidden="true"><strong>hogans</strong><br />stochastic chalk archive</div>
 <script>
 (()=>{
   // ---------- Tunables ----------
@@ -74,8 +117,8 @@
   const STEP_NUDGE_PROB  = 0.40;
   const PLINK_COOLDOWN   = 110;
 
-  const SPAWN_MS_MIN     = 30;       // doubled cadence
-  const SPAWN_MS_MAX     = 85;
+  const SPAWN_MS_MIN     = 50;       // doubled cadence
+  const SPAWN_MS_MAX     = 130;
   const MAX_FALLING      = 520;
   const FADE_IN_MS       = 700;
 
@@ -102,6 +145,7 @@
   // italic — closest browser-canvas approximation of "blackboard math notation".
   const CODE_FONT_FAMILY   = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   const MATH_FONT_FAMILY   = '"Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", Georgia, serif';
+  const HUMAN_FONT_FAMILY  = '"Iowan Old Style", "Palatino", "Georgia", "Times New Roman", serif';
   const SYMBOL_FONT_FAMILY = '"Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", Georgia, serif';
   const FONT_SIZE_CODE     = FONT_PX;          // base monospace size
   const FONT_SIZE_MATH     = FONT_PX + 2;      // serif italic at slightly larger size
@@ -125,6 +169,8 @@
       family = SYMBOL_FONT_FAMILY; size = FONT_SIZE_SYMBOL; italic = true;
     } else if (kind === "ghost") {
       family = GHOST_FONT_FAMILY;  size = FONT_SIZE_GHOST;  italic = false;
+    } else if (kind === "human") {
+      family = HUMAN_FONT_FAMILY;  size = FONT_SIZE_MATH + 1;  italic = true;
     } else { /* math */
       family = MATH_FONT_FAMILY;   size = FONT_SIZE_MATH;   italic = true;
     }
@@ -133,7 +179,7 @@
     // and a steady 25% of the rest get a -2/+4px secondary jitter so sizes feel
     // hand-scrawled rather than uniform.
     const r = Math.random();
-    if (r < 0.12)      size *= (1.3 + Math.random()*0.4);
+    if (r < 0.08)      size *= (1.3 + Math.random()*0.4);
     else if (r < 0.37) size += (Math.random()*6 - 2);
     return { family, size, italic };
   }
@@ -486,6 +532,16 @@
   ];
 
   // Rare ghostly drop-ins (~1% of spawns): emoji and short teen-text nonsense.
+    { t: "// proof left in the snow", k: "human" },
+    { t: "home := light + residue", k: "human" },
+    { t: "memory leaks toward the floor", k: "human" },
+    { t: "the theorem remembers the room", k: "human" },
+    { t: "where the chalk keeps falling", k: "human" },
+    { t: "no oracle, only weather", k: "human" },
+    { t: "every proof needs a witness", k: "human" },
+    { t: "the room is part of the proof", k: "human" }
+  ];
+
   const GHOSTS = [
     { t: "👻", k: "ghost" },
     { t: "🌙", k: "ghost" },
@@ -606,11 +662,94 @@
     // Per-glyph luminance jitter is wide so individual marks vary like real chalk.
     const baseGray = 78 + (lum * 0.12);              // ~78-108 range, biased by photo luminance
     const jitter = (Math.random() - 0.5) * 36;       // ±18 wide chalk-stroke variation
-    const rr = Math.max(40, Math.min(190, baseGray + jitter - 2));
+    const rr = Math.max(40, Math.min(190, baseGray + jitter - 5));
     const gg = Math.max(40, Math.min(190, baseGray + jitter));
-    const bb = Math.max(40, Math.min(190, baseGray + jitter + 6));   // gentle cool tint
+    const bb = Math.max(40, Math.min(190, baseGray + jitter + 12));   // gentle cool tint
     return [rr|0, gg|0, bb|0];
   }
+
+  // ---------- Atmospheric dust motes ----------
+  // A small population of slow-drifting symbol glyphs at very low alpha,
+  // independent from the spout. Adds spectral depth.
+  const DUST_COUNT = 50;
+  const dustMotes = [];
+  function initDust(){
+    dustMotes.length = 0;
+    for (let i = 0; i < DUST_COUNT; i++){
+      dustMotes.push({
+        text: SYMBOLS[(Math.random()*SYMBOLS.length)|0],
+        x: Math.random()*innerWidth,
+        y: Math.random()*innerHeight,
+        size: 7 + Math.random()*10,
+        vy: 1.5 + Math.random()*7,
+        phase: Math.random()*Math.PI*2,
+        alpha: 0.020 + Math.random()*0.055,
+        italic: Math.random() < 0.7
+      });
+    }
+  }
+  function tickDust(dt){
+    for (const m of dustMotes){
+      m.y += m.vy * dt;
+      m.x += Math.sin(m.y*0.007 + m.phase) * 0.06;
+      if (m.y > innerHeight + 30){
+        m.text = SYMBOLS[(Math.random()*SYMBOLS.length)|0];
+        m.x = Math.random()*innerWidth;
+        m.y = -30 - Math.random()*70;
+        m.size = 7 + Math.random()*10;
+        m.alpha = 0.020 + Math.random()*0.055;
+        m.italic = Math.random() < 0.7;
+      }
+    }
+  }
+  function drawDust(now){
+    fctx.save();
+    fctx.textAlign = "center";
+    fctx.textBaseline = "middle";
+    fctx.globalCompositeOperation = "screen";
+    for (const m of dustMotes){
+      const a = m.alpha * (0.74 + 0.26*Math.sin(now*0.0007 + m.phase));
+      fctx.font = (m.italic ? "italic " : "") + m.size.toFixed(1) + "px " + MATH_FONT_FAMILY;
+      fctx.fillStyle = "rgba(220,228,242," + a.toFixed(3) + ")";
+      fctx.fillText(m.text, m.x, m.y);
+    }
+    fctx.restore();
+  }
+
+  // ---------- Click-pulse rings (echo of pointerdown) ----------
+  const pulses = [];
+  const PULSE_LIFE_MS = 1200;
+  function tickPulses(now){
+    for (let i = pulses.length - 1; i >= 0; i--){
+      if (now - pulses[i].birth > PULSE_LIFE_MS) pulses.splice(i, 1);
+    }
+  }
+  function drawPulses(now){
+    if (pulses.length === 0) return;
+    fctx.save();
+    fctx.globalCompositeOperation = "screen";
+    fctx.lineWidth = 1.1;
+    for (const p of pulses){
+      const t = (now - p.birth) / PULSE_LIFE_MS;
+      if (t < 0 || t >= 1) continue;
+      const r = 18 + t * 96;
+      const a = 0.20 * (1 - t);
+      fctx.beginPath();
+      fctx.arc(p.x, p.y, r, 0, Math.PI*2);
+      fctx.strokeStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
+      fctx.stroke();
+    }
+    fctx.restore();
+  }
+
+  // ---------- Click-to-burst handler ----------
+  // On pointerdown, throw a soft ring pulse and a small handful of chalk glyphs
+  // at the cursor x. Pure additive; doesn't affect the spout cadence.
+  addEventListener('pointerdown', (e) => {
+    pulses.push({ x: e.clientX, y: e.clientY, birth: performance.now() });
+    const n = 7 + ((Math.random()*4)|0);
+    for (let i = 0; i < n; i++) spawn(e.clientX);
+  }, { passive: true });
 
   // ---------- Audio ----------
   let actx = null;
@@ -701,18 +840,20 @@
     }
     buildBoard();
     updateCoverMapping();
+    initDust();
   }
   resize();
   addEventListener('resize', resize);
 
   // ---------- Spawning ----------
-  function spawn(){
+  function spawn(xOverride){
     if (falling.length >= MAX_FALLING) return;
+    const isBurst = (xOverride != null);
     // Pick a snippet whose text is not currently visible anywhere on screen.
     // Walk SNIPPETS starting from a random offset; first one not in inUseTexts wins.
     let pick = null;
     // Rare ghost drops: with GHOST_PROBABILITY chance, pick from GHOSTS instead.
-    if (Math.random() < GHOST_PROBABILITY){
+    if (!isBurst && Math.random() < GHOST_PROBABILITY){
       const gStart = (Math.random()*GHOSTS.length)|0;
       for (let off=0; off<GHOSTS.length; off++){
         const cand = GHOSTS[(gStart + off) % GHOSTS.length];
@@ -735,7 +876,7 @@
     const fontObj = pickFont(kind);
     const fontStr = fontCSS(fontObj);
     const cxSnap = cxBoard;                         // freeze the lattice for this flake
-    const x = cxSnap + (Math.random()-0.5)*16;
+    const x = (isBurst ? xOverride + (Math.random()-0.5)*22 : cxSnap + (Math.random()-0.5)*16);
     // Spawn y must always be ABOVE the current pile top near the spout, so as the pile
     // grows up past topY the spout effectively rises with it and flakes never spawn inside the heap.
     const restAtSpoutY = restingYFor(x);   // y of (just above) highest pile near spout x
@@ -1107,7 +1248,11 @@
       spawn();
     }
     tickPhysics(dt, now);
+    tickDust(dt);
+    tickPulses(now);
     drawFalling(now);
+    drawDust(now);
+    drawPulses(now);
     drawPile(now);
     requestAnimationFrame(loop);
   }

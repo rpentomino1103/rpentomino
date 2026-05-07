@@ -58,9 +58,9 @@
   const PILE_ALPHA       = 1.00;
   // Etched-pile tunables (decoupled from in-flight GLYPH_ALPHA so falling chalk stays
   // light/atmospheric while landed chalk is decisively concrete and legible):
-  const PILE_FILL_ALPHA  = 0.62;     // chalk-fill opacity per landed glyph (semi-transparent but readable)
-  const PILE_EDGE_ALPHA  = 0.92;     // tight dark outline — the etched edge
-  const PILE_HALO_ALPHA  = 0.18;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
+  const PILE_FILL_ALPHA  = 0.82;     // chalk-fill opacity per landed glyph (semi-transparent but readable)
+  const PILE_EDGE_ALPHA  = 1.00;     // tight dark outline — the etched edge
+  const PILE_HALO_ALPHA  = 0.30;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
   const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
   const PILE_X_JITTER    = 0.95;      // fraction of pitch
   const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
@@ -74,9 +74,9 @@
   const STEP_NUDGE_PROB  = 0.40;
   const PLINK_COOLDOWN   = 110;
 
-  const SPAWN_MS_MIN     = 55;       // doubled cadence
-  const SPAWN_MS_MAX     = 140;
-  const MAX_FALLING      = 340;
+  const SPAWN_MS_MIN     = 30;       // doubled cadence
+  const SPAWN_MS_MAX     = 85;
+  const MAX_FALLING      = 520;
   const FADE_IN_MS       = 700;
 
   const CURSOR_TRACK_LERP = 0.06;     // per-frame ease toward cursor x

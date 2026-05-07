@@ -669,13 +669,14 @@
   // ---------- Atmospheric dust motes ----------
   // A small population of slow-drifting symbol glyphs at very low alpha,
   // independent from the spout. Adds spectral depth.
+  const DUST_SYMBOLS = ['λ','∀','∃','∂','∇','∮','∑','∏','π','∞','ℵ','ℝ','ℂ','ℕ','ℤ','ℚ','ψ','φ','θ','σ','τ','ε','δ','κ','μ','η','ξ','ζ','≅','≈','≠','≡','⊕','⊗','↦','⇝','⊢','⊨'];
   const DUST_COUNT = 50;
   const dustMotes = [];
   function initDust(){
     dustMotes.length = 0;
     for (let i = 0; i < DUST_COUNT; i++){
       dustMotes.push({
-        text: SYMBOLS[(Math.random()*SYMBOLS.length)|0],
+        text: DUST_SYMBOLS[(Math.random()*DUST_SYMBOLS.length)|0],
         x: Math.random()*innerWidth,
         y: Math.random()*innerHeight,
         size: 7 + Math.random()*10,
@@ -691,7 +692,7 @@
       m.y += m.vy * dt;
       m.x += Math.sin(m.y*0.007 + m.phase) * 0.06;
       if (m.y > innerHeight + 30){
-        m.text = SYMBOLS[(Math.random()*SYMBOLS.length)|0];
+        m.text = DUST_SYMBOLS[(Math.random()*DUST_SYMBOLS.length)|0];
         m.x = Math.random()*innerWidth;
         m.y = -30 - Math.random()*70;
         m.size = 7 + Math.random()*10;

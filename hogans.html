@@ -50,26 +50,6 @@
     mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
   }
-  .caption {
-    position: fixed;
-    left: max(20px, env(safe-area-inset-left));
-    bottom: max(18px, env(safe-area-inset-bottom));
-    z-index: 10002;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    font-size: 11px;
-    line-height: 1.6;
-    color: rgba(238,242,250,0.92);
-    padding: 8px 12px 9px 12px;
-    background: rgba(0,0,0,0.42);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    border-left: 1px solid rgba(238,242,250,0.35);
-    text-shadow: 0 1px 18px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.9);
-    pointer-events: none;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  .caption strong { font-weight: 700; opacity: 1.0; letter-spacing: 0.22em; color: rgba(245,248,255,0.98); }
 </style>
 </head>
 <body>
@@ -80,7 +60,6 @@
 <div class="scrim" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
-<div class="caption" aria-hidden="true"><strong>hogans</strong><br />stochastic chalk archive</div>
 <script>
 (()=>{
   // ---------- Tunables ----------
@@ -552,22 +531,22 @@
 
   // Rare ghostly drop-ins (~1% of spawns): emoji and short teen-text nonsense.
   const GHOSTS = [
-    { t: "👻", k: "ghost" },
-    { t: "🌙", k: "ghost" },
-    { t: "✨", k: "ghost" },
-    { t: "💫", k: "ghost" },
-    { t: "🪐", k: "ghost" },
-    { t: "🌸", k: "ghost" },
-    { t: "🍵", k: "ghost" },
-    { t: "☕", k: "ghost" },
-    { t: "📎", k: "ghost" },
-    { t: "🦊", k: "ghost" },
-    { t: "🐸", k: "ghost" },
-    { t: "🌈", k: "ghost" },
-    { t: "🍓", k: "ghost" },
-    { t: "🍦", k: "ghost" },
-    { t: "🐝", k: "ghost" },
-    { t: "🌻", k: "ghost" },
+    { t: "literally a ghost \uD83D\uDC7B", k: "ghost" },
+    { t: "moon era frfr \uD83C\uDF1A", k: "ghost" },
+    { t: "sparkle moment \u2728", k: "ghost" },
+    { t: "manifesting \u2728\uD83C\uDF20", k: "ghost" },
+    { t: "tea time besties \u2615", k: "ghost" },
+    { t: "donut talk to me \uD83C\uDF69", k: "ghost" },
+    { t: "crashing out rn \uD83C\uDF6B", k: "ghost" },
+    { t: "ate that \uD83E\uDD60", k: "ghost" },
+    { t: "chefs kiss \uD83E\uDD0C", k: "ghost" },
+    { t: "sushi mood \uD83C\uDF63", k: "ghost" },
+    { t: "veggies whatever \uD83E\uDD57", k: "ghost" },
+    { t: "rainbow vibes \uD83C\uDF08", k: "ghost" },
+    { t: "spicy take \uD83C\uDF36", k: "ghost" },
+    { t: "bulb energy \uD83D\uDCA1", k: "ghost" },
+    { t: "delulu hours \uD83D\uDC83", k: "ghost" },
+    { t: "trophy gf \uD83C\uDFC6", k: "ghost" },
     { t: "no thoughts head empty 🥲", k: "ghost" },
     { t: "bestie wym 💀💀💀", k: "ghost" },
     { t: "ok mother 🫶", k: "ghost" },

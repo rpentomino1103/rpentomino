@@ -9,45 +9,35 @@
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%;
-    background: #000; overflow: hidden;
+    background: #0b0d10; overflow: hidden;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: #fff;
+    color: #e8eef8;
   }
   .bg {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
     object-fit: cover; object-position: center;
     user-select: none; -webkit-user-drag: none; pointer-events: none;
+    filter: saturate(0.85) brightness(0.85) blur(4px);
   }
-  /* Two stacked canvases: falling flakes (with motion-blur) and the pile (cleared each frame). */
   canvas.layer {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
-    pointer-events: none; mix-blend-mode: screen;
-  }
-  canvas#fall { z-index: 9998; }
-  canvas#pile { z-index: 9999; mix-blend-mode: normal; }
-  h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-  /* ---- Visual frame: scrim + grain + vignette + caption ---- */
-  .scrim, .grain, .vignette {
-    position: fixed; inset: 0;
     pointer-events: none;
   }
-  .scrim {
-    z-index: 2;
+  canvas#field { z-index: 9996; mix-blend-mode: screen; }
+  canvas#fall  { z-index: 9997; mix-blend-mode: screen; }
+  canvas#marks { z-index: 9998; mix-blend-mode: screen; }
+  h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .scrim, .grain, .vignette { position: fixed; inset: 0; pointer-events: none; }
+  .scrim { z-index: 9999;
     background:
-      radial-gradient(circle at 50% 30%, rgba(255,255,255,0.04), rgba(255,255,255,0) 32%),
-      linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.36));
+      radial-gradient(circle at 50% 28%, rgba(255,255,255,0.04), rgba(255,255,255,0) 36%),
+      linear-gradient(180deg, rgba(0,0,0,0.20), rgba(0,0,0,0.42));
   }
-  .vignette {
-    z-index: 10000;
+  .vignette { z-index: 10000;
     background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 45%,
-      rgba(0,0,0,0.18) 75%,
-      rgba(0,0,0,0.42) 100%);
+      rgba(0,0,0,0) 42%, rgba(0,0,0,0.20) 76%, rgba(0,0,0,0.46) 100%);
   }
-  .grain {
-    z-index: 10001;
-    opacity: 0.10;
-    mix-blend-mode: soft-light;
+  .grain { z-index: 10001; opacity: 0.10; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
   }
 </style>
@@ -55,1216 +45,455 @@
 <body>
 <h1>hogans</h1>
 <img class="bg" id="bgimg" src="/photos/hogans.jpg" alt="" crossorigin="anonymous" />
-<canvas id="fall" class="layer"></canvas>
-<canvas id="pile" class="layer"></canvas>
+<canvas id="field" class="layer"></canvas>
+<canvas id="fall"  class="layer"></canvas>
+<canvas id="marks" class="layer"></canvas>
 <div class="scrim" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
 <script>
 (()=>{
+  // ============================================================
+  //  Galton chalkboard — realistic piling, continuous compression,
+  //  edge-fill via lateral transport, ten-minute saturation arc.
+  //  Architecture:
+  //   - falling tokens (Galton walk through a peg lattice)
+  //   - on landing, a token deposits into a column-height field h[i]
+  //     and a small ink stamp into a low-res density grid
+  //   - every frame: compression (erosion proportional to height),
+  //     lateral transport (angle-of-repose flow between neighbors),
+  //     and ghost marks ride the surface — sliding and fading with it
+  //   - target: at t about 10min the field has saturated to the cap,
+  //     edges are full from migration, marks layer into a worn surface
+  // ============================================================
+
   // ---------- Tunables ----------
-  const GLYPH_ALPHA      = 0.13;      // bumped so overlapping flakes additively brighten the center of the Galton bell
-  const TRAIL_FADE       = 0.34;      // faster trail dissipation = crisper letterforms (especially helps emoji legibility)
-  const ROWS             = 11;
-  const PEG_PITCH_PX     = 44;
-  const ROW_GAP_PX       = 50;
+  const ROWS = 11;
+  const PEG_PITCH = 44;
+  const ROW_GAP   = 50;
 
-  const FALL_SPEED       = 42;        // px/sec — purposeful but snowy
-  const FALL_SPEED_VAR   = 0.30;
-  const PILE_GRAVITY     = 0;         // (unused) constant-velocity pile descent — no acceleration
-  const PILE_MAX_VY      = 380;       // terminal falling speed in the pile zone
+  const RUNTIME_S      = 600;
+  const SPAWN_MS_EARLY = 110;
+  const SPAWN_MS_LATE  = 36;
+  const MAX_FALLING    = 260;
 
-  const SWAY_AMP         = 6;
-  const SWAY_FREQ_HZ     = 0.18;
-  const ROT_AMP_MIN      = 0.10;
-  const ROT_AMP_MAX      = 0.18;
-  const ROT_PERIOD_MIN   = 3.0;
-  const ROT_PERIOD_MAX   = 7.0;
+  const FALL_SPEED     = 56;
+  const FALL_SPEED_VAR = 0.30;
+  const SWAY_AMP       = 6;
+  const SWAY_FREQ_HZ   = 0.18;
 
-  const PILE_REST_ROT    = 0.75;      // ±~28° random rotation per pile glyph (junk-pile feel)
-  const PILE_ALPHA       = 1.00;
-  // Etched-pile tunables (decoupled from in-flight GLYPH_ALPHA so falling chalk stays
-  // light/atmospheric while landed chalk is decisively concrete and legible):
-  const PILE_FILL_ALPHA  = 0.82;     // chalk-fill opacity per landed glyph (semi-transparent but readable)
-  const PILE_EDGE_ALPHA  = 1.00;     // tight dark outline — the etched edge
-  const PILE_HALO_ALPHA  = 0.30;      // negative-fill alpha; lower so the pile builds up gradually and the photograph remains faintly visible through gaps
-  const PILE_STROKE_ALPHA= 0.55;      // dark stroke around pile glyph text for definition
-  const PILE_X_JITTER    = 0.95;      // fraction of pitch
-  const SLIDE_SPEED      = 28;        // px/sec — soft tumble across a slope before settling
-  const SLOPE_THRESHOLD  = 0.5;       // fraction of STACK_STEP that triggers a slide
-  const SIDE_PROBE_RADIUS= 2.0;       // multiples of STACK_STEP — left/right neighbor probe distance
-  const STACK_STEP       = 13;        // typical stack increment in px (similar to FONT_PX)
-  const STACK_VARIANCE   = 4;         // ± px noise per stack so heights vary
+  const FONT_PX = 13;
+  const GLYPH_ALPHA = 0.16;
+  const TRAIL_FADE  = 0.30;
 
-  // Soft-settle (leaf-fall) tunables: decelerate vy as a flake nears its rest spot
-  // so it doesn't snap to the surface at full falling speed.
-  const SETTLE_BAND      = 36;           // px of deceleration zone above restY
-  const SETTLE_LAND_VY   = 18;           // terminal vy at the moment of landing
-  const SETTLE_DAMP      = 0.18;         // lerp factor toward target vy each frame
+  // Field: column-resolution height map driving everything
+  const COL_PX           = 6;
+  const FIELD_CAP_FRAC   = 0.92;
+  const FIELD_FLOOR_FRAC = 0.08;
 
-  const FONT_PX          = 13;
-  const PLINK_VOL        = 0.022;
-  const STEP_NUDGE_PROB  = 0.40;
-  const PLINK_COOLDOWN   = 110;
+  // Compression: taller columns shrink faster
+  const EROSION_BASE = 0.0020;
+  const EROSION_LATE = 0.0150;
 
-  const SPAWN_MS_MIN     = 50;       // doubled cadence
-  const SPAWN_MS_MAX     = 130;
-  const MAX_FALLING      = 220;
-  const FADE_IN_MS       = 700;
+  // Lateral transport (slope-driven flow)
+  const REPOSE_SLOPE   = 0.55;
+  const FLOW_RATE_BASE = 0.06;
+  const FLOW_RATE_LATE = 0.22;
 
-  const CURSOR_TRACK_LERP = 0.06;     // per-frame ease toward cursor x
+  // Density grid
+  const DENS_PX      = 8;
+  const DENS_DEPOSIT = 0.28;
+  const DENS_DECAY   = 0.0006;
+  const DENS_BLOOM   = 6;
 
-  // ---- Landing alpha ramp: smooth opacity transition from falling -> pile ----
-  const LANDING_FADE_MS    = 600;     // duration of the alpha ramp from in-flight to pile
+  // Marks
+  const MAX_MARKS_BASE  = 1400;
+  const MAX_MARKS_LATE  = 4200;
+  const MARK_FADE_FLOOR = 0.15;
 
-  // ---- Pile-pressure auto-drift: when the pile under the spout reaches near the top, ----
-  // ---- the spout slides sideways to fill empty columns. Engages regardless of cursor    ----
-  // ---- motion (cursor still biases direction, but does not block drift).                ----
-  const IDLE_DRIFT_DELAY_MS  = 2200;   // (legacy) ignored by current drift trigger
-  const DRIFT_PERIOD_S       = 52;     // seconds for one full sweep across the viewport
-  const DRIFT_TRIGGER_PX     = 90;     // pile-top within this y of viewport top engages drift
-  const DRIFT_FULL_PX        = 50;     // pile-top within this y of viewport top forces full drift weight
-  const DRIFT_CURSOR_BIAS    = 0.25;   // how much cursor still pulls when drift active (0 = ignore cursor)
+  // Galton
+  const STEP_P         = 0.5;
+  const PLINK_VOL      = 0.018;
+  const PLINK_COOLDOWN = 110;
 
-  const PHOTO_SAT_BOOST  = 0.85;
-  const PHOTO_LIGHT_BIAS = 0.12;
-  const PHOTO_BLUR_PX    = 6;
+  // ---------- Canvas / DPI ----------
+  const fieldC = document.getElementById('field');
+  const fallC  = document.getElementById('fall');
+  const marksC = document.getElementById('marks');
+  const fctx = fieldC.getContext('2d');
+  const tctx = fallC.getContext('2d');
+  const mctx = marksC.getContext('2d');
 
-  // ---------- Typography (chalkboard mix) ----------
-  // Code stays in monospace (the system's ui-monospace stack). Math and symbols get a serif
-  // italic — closest browser-canvas approximation of "blackboard math notation".
-  const CODE_FONT_FAMILY   = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-  const MATH_FONT_FAMILY   = '"Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", Georgia, serif';
-  const HUMAN_FONT_FAMILY  = '"Iowan Old Style", "Palatino", "Georgia", "Times New Roman", serif';
-  const SYMBOL_FONT_FAMILY = '"Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", Georgia, serif';
-  const FONT_SIZE_CODE     = FONT_PX;          // base monospace size
-  const FONT_SIZE_MATH     = FONT_PX + 2;      // serif italic at slightly larger size
-  const FONT_SIZE_SYMBOL   = FONT_PX + 6;      // ornamental headline tokens
-  const FONT_SIZE_JITTER   = 3.0;              // ± px random size jitter per flake
-
-  // Rare "ghost" drops — every ~1% of spawns we leak a single emoji or a fragment of
-  // emoji-laden teen-texting nonsense. They render at lower alpha so they feel ghostly and
-  // ephemeral against the math/code lattice.
-  const GHOST_PROBABILITY  = 0.028;            // ~2.8% chance per spawn — teen-text drops show up several times a minute
-  const GHOST_ALPHA_MUL    = 1.00;             // ghostly but readable — emoji and teen-text drops should be visible at a glance
-  const FONT_SIZE_GHOST    = FONT_PX + 3;      // a touch larger so emoji read at any size
-  const GHOST_FONT_FAMILY  = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Segoe UI Symbol", -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif';
-
-  // Pick a per-flake font (family + size + italic) based on the snippet's kind.
-  function pickFont(kind){
-    let family, size, italic;
-    if (kind === "code") {
-      family = CODE_FONT_FAMILY;   size = FONT_SIZE_CODE;   italic = false;
-    } else if (kind === "symbol") {
-      family = SYMBOL_FONT_FAMILY; size = FONT_SIZE_SYMBOL; italic = true;
-    } else if (kind === "ghost") {
-      family = GHOST_FONT_FAMILY;  size = FONT_SIZE_GHOST;  italic = false;
-    } else if (kind === "human") {
-      family = HUMAN_FONT_FAMILY;  size = FONT_SIZE_MATH + 1;  italic = true;
-    } else { /* math */
-      family = MATH_FONT_FAMILY;   size = FONT_SIZE_MATH;   italic = true;
-    }
-    size += (Math.random()*2-1) * FONT_SIZE_JITTER;
-    // Chalkboard mixed-scale: occasional 'headline' glyphs are 1.8–2.6x larger,
-    // and a steady 25% of the rest get a -2/+4px secondary jitter so sizes feel
-    // hand-scrawled rather than uniform.
-    const r = Math.random();
-    if (r < 0.08)      size *= (1.3 + Math.random()*0.4);
-    else if (r < 0.37) size += (Math.random()*6 - 2);
-    return { family, size, italic };
-  }
-  function fontCSS(f){ return (f.italic ? "italic " : "") + f.size.toFixed(1) + "px " + f.family; }
-
-  const SNIPPETS = [
-    { t: "Y = λf.(λx.f(x x))(λx.f(x x))", k: "math" },
-    { t: "K = λx.λy.x", k: "math" },
-    { t: "S = λx.λy.λz.x z (y z)", k: "math" },
-    { t: "I = λx.x", k: "math" },
-    { t: "ω = λx.x x", k: "math" },
-    { t: "Ω = ω ω", k: "math" },
-    { t: "B = λf.λg.λx.f(g x)", k: "math" },
-    { t: "C = λf.λx.λy.f y x", k: "math" },
-    { t: "fix f = let x = f x in x", k: "code" },
-    { t: "Θ = (λxy.y(xxy))(λxy.y(xxy))", k: "math" },
-    { t: "succ = λn.λf.λx.f(n f x)", k: "math" },
-    { t: "true = λx.λy.x", k: "math" },
-    { t: "false = λx.λy.y", k: "math" },
-    { t: "if = λp.λa.λb.p a b", k: "code" },
-    { t: "pair = λx.λy.λf.f x y", k: "math" },
-    { t: "e^{iπ} + 1 = 0", k: "math" },
-    { t: "ζ(s) = Σ 1/n^s", k: "math" },
-    { t: "F_n = F_{n-1} + F_{n-2}", k: "math" },
-    { t: "φ = (1+√5)/2", k: "math" },
-    { t: "∂L/∂q − d/dt(∂L/∂q̇) = 0", k: "math" },
-    { t: "∇·E = ρ/ε₀", k: "math" },
-    { t: "‖x‖² = ⟨x,x⟩", k: "math" },
-    { t: "P(A|B) = P(B|A)·P(A)/P(B)", k: "math" },
-    { t: "lim (1+1/n)^n = e", k: "math" },
-    { t: "Σ 1/n² = π²/6", k: "math" },
-    { t: "Σ 1/n⁴ = π⁴/90", k: "math" },
-    { t: "ζ(s) = ∏_p 1/(1 − p^{-s})", k: "math" },
-    { t: "γ = lim (Σ 1/k − ln n)", k: "math" },
-    { t: "π(n) ~ n/ln n", k: "math" },
-    { t: "Σ μ(d) = [n=1]", k: "math" },
-    { t: "Σ_{d|n} φ(d) = n", k: "math" },
-    { t: "Σ 1/p_n diverges", k: "math" },
-    { t: "Σ μ(n)/n = 0", k: "math" },
-    { t: "ζ(3) = Apéry's constant", k: "math" },
-    { t: "G = Σ (-1)^n/(2n+1)² ≈ 0.9159…", k: "math" },
-    { t: "1729 = 1³ + 12³ = 9³ + 10³", k: "math" },
-    { t: "p ≡ 1 (mod 4) ⇒ p = a² + b²", k: "math" },
-    { t: "x² − Dy² = 1   [Pell]", k: "math" },
-    { t: "FLT: x^n + y^n = z^n, n>2 ⇒ ∅", k: "math" },
-    { t: "(p−1)! ≡ −1 (mod p)   [Wilson]", k: "math" },
-    { t: "e^x = Σ x^n / n!", k: "math" },
-    { t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math" },
-    { t: "cos x = Σ (−1)^n x^{2n}/(2n)!", k: "math" },
-    { t: "ln(1+x) = Σ (−1)^{n+1} x^n / n", k: "math" },
-    { t: "(1+x)^α = Σ (α choose n) x^n", k: "math" },
-    { t: "π/4 = 1 − 1/3 + 1/5 − 1/7 + …", k: "math" },
-    { t: "π/2 = ∏ (2n)²/((2n−1)(2n+1))   [Wallis]", k: "math" },
-    { t: "1 + 1/2 + 1/3 + … = ∞", k: "math" },
-    { t: "∫₀^∞ e^{−x²} dx = √π / 2", k: "math" },
-    { t: "∫_{−∞}^∞ e^{−x²} dx = √π", k: "math" },
-    { t: "∫₀^∞ sin(x)/x dx = π/2", k: "math" },
-    { t: "∫₀^{π/2} ln sin x dx = −π ln 2 / 2", k: "math" },
-    { t: "Γ(z+1) = z Γ(z)", k: "math" },
-    { t: "Γ(1/2) = √π", k: "math" },
-    { t: "B(x,y) = Γ(x)Γ(y)/Γ(x+y)", k: "math" },
-    { t: "n! ≈ √(2πn)(n/e)^n (1 + 1/(12n))", k: "math" },
-    { t: "Σ k=1..n k = n(n+1)/2", k: "math" },
-    { t: "Σ k² = n(n+1)(2n+1)/6", k: "math" },
-    { t: "n! ~ √(2πn)(n/e)^n", k: "math" },
-    { t: "∫_a^b f' = f(b) − f(a)", k: "math" },
-    { t: "∫ u dv = uv − ∫ v du", k: "math" },
-    { t: "(d/dx)(fg) = f'g + fg'", k: "math" },
-    { t: "∇²φ = 0", k: "math" },
-    { t: "∮ E·dl = −dΦ_B/dt", k: "math" },
-    { t: "∮ B·dl = μ₀I + μ₀ε₀ dΦ_E/dt", k: "math" },
-    { t: "F = ma", k: "math" },
-    { t: "E = mc²", k: "math" },
-    { t: "iℏ ∂ψ/∂t = Ĥψ", k: "math" },
-    { t: "[x̂, p̂] = iℏ", k: "math" },
-    { t: "ΔxΔp ≥ ℏ/2", k: "math" },
-    { t: "ds² = −c²dt² + dx² + dy² + dz²", k: "math" },
-    { t: "G_μν = 8πG/c⁴ · T_μν", k: "math" },
-    { t: "(iγ^μ ∂_μ − m)ψ = 0", k: "math" },
-    { t: "|⟨a,b⟩| ≤ ‖a‖‖b‖", k: "math" },
-    { t: "AM ≥ GM", k: "math" },
-    { t: "(a+b)² = a² + 2ab + b²", k: "math" },
-    { t: "a² + b² = c²", k: "math" },
-    { t: "tr(AB) = tr(BA)", k: "math" },
-    { t: "det(AB) = det(A)det(B)", k: "math" },
-    { t: "A · A⁻¹ = I", k: "math" },
-    { t: "(A^T)⁻¹ = (A⁻¹)^T", k: "math" },
-    { t: "Av = λv", k: "math" },
-    { t: "A = UΣV^T", k: "math" },
-    { t: "¬¬p ⇔ p", k: "math" },
-    { t: "¬(p ∧ q) ⇔ (¬p) ∨ (¬q)", k: "math" },
-    { t: "p → q ⇔ ¬p ∨ q", k: "math" },
-    { t: "∀x ∃y. y > x", k: "math" },
-    { t: "|N| < |R|", k: "math" },
-    { t: "ω + 1 ≠ 1 + ω", k: "math" },
-    { t: "ZFC ⊢ φ?", k: "math" },
-    { t: "PA ⊬ Con(PA)", k: "math" },
-    { t: "AC ⇔ Zorn's Lemma", k: "math" },
-    { t: "{x : x ∉ x}", k: "math" },
-    { t: "∅ ⊆ S", k: "math" },
-    { t: "|P(S)| = 2^|S|", k: "math" },
-    { t: "qsort [] = []", k: "code" },
-    { t: "qsort (p:xs) = qsort [x|x<-xs,x<p] ++ [p] ++ qsort [x|x<-xs,x>=p]", k: "code" },
-    { t: "∫_M K dA = 2π χ(M)", k: "math" },
-    { t: "V − E + F = 2", k: "math" },
-    { t: "c² = a² + b² − 2ab cos C", k: "math" },
-    { t: "A = √(s(s−a)(s−b)(s−c))", k: "math" },
-    { t: "(m²−n², 2mn, m²+n²)   [Pythag triples]", k: "math" },
-    { t: "S² has no nonvanishing tangent vector field", k: "math" },
-    { t: "π₁(S^n) = 0  for n ≥ 2", k: "math" },
-    { t: "M = ∂N", k: "math" },
-    { t: "∮_{∂Σ} ω = ∫_Σ dω", k: "math" },
-    { t: "∫_∂Ω F·n = ∫_Ω ∇·F", k: "math" },
-    { t: "∮ f(z) dz = 2πi Σ Res", k: "math" },
-    { t: "ds² = g_{ij} dx^i dx^j", k: "math" },
-    { t: "fib n = if n<2 then n else fib(n-1)+fib(n-2)", k: "code" },
-    { t: "ack 0 n = n+1", k: "code" },
-    { t: "gcd a 0 = a; gcd a b = gcd b (a mod b)", k: "code" },
-    { t: "foldr f z [] = z", k: "code" },
-    { t: "map f [] = []", k: "code" },
-    { t: "iterate f x = x : iterate f (f x)", k: "code" },
-    { t: "scanl f z xs = ...", k: "code" },
-    { t: "primes = sieve [2..]", k: "code" },
-    { t: "sieve (p:xs) = p : sieve [x|x<-xs,x mod p ≠ 0]", k: "code" },
-    { t: "merge [] ys = ys", k: "code" },
-    { t: "split xs = halves", k: "code" },
-    { t: "zip xs ys = ...", k: "code" },
-    { t: "while x: x = f(x)", k: "code" },
-    { t: "for i in range(n): yield i", k: "code" },
-    { t: "newton: x ← x − f(x)/f'(x)", k: "code" },
-    { t: "Dijkstra: d[v] = min(d[v], d[u]+w(u,v))", k: "code" },
-    { t: "A* f(n) = g(n) + h(n)", k: "code" },
-    { t: "BFS: queue.push(start)", k: "code" },
-    { t: "DFS: stack.push(start)", k: "code" },
-    { t: "Kruskal: sort edges by weight", k: "code" },
-    { t: "binarySearch lo hi", k: "code" },
-    { t: "∀a. a → a", k: "math" },
-    { t: "Π(x:A) B(x)", k: "math" },
-    { t: "Σ(x:A) B(x)", k: "math" },
-    { t: "data List a = Nil | Cons a (List a)", k: "code" },
-    { t: "data Maybe a = Nothing | Just a", k: "code" },
-    { t: "data Bool = True | False", k: "code" },
-    { t: "data Either a b = Left a | Right b", k: "code" },
-    { t: "|G| = |H| · [G:H]", k: "math" },
-    { t: "|G·x| · |G_x| = |G|", k: "math" },
-    { t: "i² = j² = k² = ijk = −1", k: "math" },
-    { t: "[a, b] = ab − ba", k: "math" },
-    { t: "det(A − λI) = 0", k: "math" },
-    { t: "tr(A) = Σ λ_i", k: "math" },
-    { t: "det(A) = ∏ λ_i", k: "math" },
-    { t: "(a+b)^n = Σ (n choose k) a^k b^{n−k}", k: "math" },
-    { t: "(C(n,k) = C(n−1,k−1) + C(n−1,k))", k: "math" },
-    { t: "Vandermonde: Σ C(m,k)C(n,r−k) = C(m+n,r)", k: "math" },
-    { t: "ker f ◁ G", k: "math" },
-    { t: "G/ker f ≅ im f", k: "math" },
-    { t: "newtype Identity a = Identity { runIdentity :: a }", k: "code" },
-    { t: "instance Functor Maybe", k: "code" },
-    { t: "instance Monad []", k: "code" },
-    { t: "return >>= f ≡ f", k: "math" },
-    { t: "m >>= return ≡ m", k: "math" },
-    { t: "(m >>= f) >>= g ≡ m >>= (λx. f x >>= g)", k: "math" },
-    { t: "fmap id = id", k: "math" },
-    { t: "fmap (g . f) = fmap g . fmap f", k: "math" },
-    { t: "F(g ∘ f) = F(g) ∘ F(f)", k: "math" },
-    { t: "η : Id ⇒ T", k: "math" },
-    { t: "μ : T·T ⇒ T", k: "math" },
-    { t: "while(P==0) yield();", k: "code" },
-    { t: "lock(); /* CS */ unlock();", k: "code" },
-    { t: "spawn(go(work, ch));", k: "code" },
-    { t: "select { case x := <-ch: }", k: "code" },
-    { t: "fork(); exec(prog);", k: "code" },
-    { t: "EAGAIN ≠ EWOULDBLOCK", k: "code" },
-    { t: "f(x) = (1/(σ√(2π))) e^{−(x−μ)²/(2σ²)}", k: "math" },
-    { t: "(X̄_n − μ)/(σ/√n) → N(0,1)", k: "math" },
-    { t: "E[X] = Σ x P(X=x)", k: "math" },
-    { t: "Var(X) = E[X²] − E[X]²", k: "math" },
-    { t: "E[X] = E[E[X|Y]]", k: "math" },
-    { t: "P(X ≥ a) ≤ E[X]/a   [Markov]", k: "math" },
-    { t: "P(|X−μ| ≥ kσ) ≤ 1/k²   [Chebyshev]", k: "math" },
-    { t: "M_X(t) = E[e^{tX}]", k: "math" },
-    { t: "P(A∪B) = P(A) + P(B) − P(A∩B)", k: "math" },
-    { t: "Cov(X,Y) = E[XY] − E[X]E[Y]", k: "math" },
-    { t: "kill -9 $(pidof bug)", k: "code" },
-    { t: "echo $? # exit code", k: "code" },
-    { t: "trap 'cleanup' EXIT", k: "code" },
-    { t: "/dev/urandom", k: "code" },
-    { t: "mmap(NULL, sz, PROT_READ, ...)", k: "code" },
-    { t: "epoll_wait(efd, ev, 64, -1);", k: "code" },
-    { t: "futex(addr, FUTEX_WAIT, val, NULL);", k: "code" },
-    { t: "/^(\\d+)\\.(\\d+)$/", k: "code" },
-    { t: "s/\\bthe\\b/THE/g", k: "code" },
-    { t: "(?<=foo)bar", k: "code" },
-    { t: "[A-Z]\\w*", k: "code" },
-    { t: "/(?:^|\\s)#(\\w+)/g", k: "code" },
-    { t: "/\\bO\\(n\\^?\\d*\\)/", k: "code" },
-    { t: "x & (x-1)  // clear lowest bit", k: "code" },
-    { t: "(x ^ y) & -(x < y)", k: "code" },
-    { t: "n & -n     // lowest set bit", k: "code" },
-    { t: "popcount(x)", k: "code" },
-    { t: "sign = (x>>31) | ((-x)>>>31)", k: "code" },
-    { t: "x ^= y; y ^= x; x ^= y;", k: "code" },
-    { t: "((x + 7) & ~7)  // align up 8", k: "code" },
-    { t: "ctz(x), clz(x), nlz(x)", k: "code" },
-    { t: "H(M, w) = ⊥", k: "code" },
-    { t: "K(x) = min{|p|: U(p)=x}", k: "code" },
-    { t: "Σ(n)  // busy beaver", k: "code" },
-    { t: "BB(5) ≥ 47,176,870", k: "code" },
-    { t: "L = {⟨M⟩ : M halts on ε}", k: "code" },
-    { t: "P =? NP", k: "math" },
-    { t: "SAT ∈ NP-complete", k: "math" },
-    { t: "while alive: dream()", k: "code" },
-    { t: "if not us, then who?", k: "code" },
-    { t: "// here be dragons", k: "code" },
-    { t: "// TODO: prove termination", k: "code" },
-    { t: "// XXX: do not @ me", k: "code" },
-    { t: "// FIXME: future me's problem", k: "code" },
-    { t: "// NB: the universe disagrees", k: "code" },
-    { t: "assert(reality);", k: "code" },
-    { t: "throw new Hope();", k: "code" },
-    { t: "raise StopIteration", k: "code" },
-    { t: "panic!(\"unreachable\")", k: "code" },
-    { t: "throw new HeapEmpty();", k: "code" },
-    { t: "exit(0); // peace", k: "code" },
-    { t: "1/0 = ∞", k: "math" },
-    { t: "0.1 + 0.2 ≠ 0.3", k: "math" },
-    { t: "NaN ≠ NaN", k: "math" },
-    { t: "Math.sin(π) ≈ 1.22e-16", k: "math" },
-    { t: "Number.MAX_SAFE_INTEGER", k: "math" },
-    { t: "y = g^x mod p", k: "math" },
-    { t: "ECDSA(m, k) = (r, s)", k: "code" },
-    { t: "OTP: c = m ⊕ k", k: "code" },
-    { t: "RSA: c = m^e mod n", k: "code" },
-    { t: "n = pq, φ(n) = (p-1)(q-1)", k: "math" },
-    { t: "ed ≡ 1 (mod φ(n))", k: "math" },
-    { t: "a^p ≡ a (mod p)  [Fermat]", k: "math" },
-    { t: "gcd(a,b) = gcd(b, a mod b)", k: "math" },
-    { t: "sha256: 64 rounds", k: "code" },
-    { t: "blake3 ≈ 1 cpb", k: "code" },
-    { t: "H(X) = -Σ p log p", k: "math" },
-    { t: "I(X;Y) = H(X) − H(X|Y)", k: "math" },
-    { t: "C = B log₂(1 + S/N)", k: "math" },
-    { t: "S = k_B ln W", k: "math" },
-    { t: "L = T − V", k: "math" },
-    { t: "S = ∫ L dt", k: "math" },
-    { t: "δS = 0", k: "math" },
-    { t: "ψ(x,t) = ∫ 𝒟φ e^{iS[φ]/ℏ}", k: "math" },
-    { t: "r_s = 2GM/c²", k: "math" },
-    { t: "F = −∇V", k: "math" },
-    { t: "p = mv,  E = ½mv²", k: "math" },
-    { t: "Z = Σ e^{−βE_n}", k: "math" },
-    { t: "F = −kT ln Z", k: "math" },
-    { t: "PV = NkT", k: "math" },
-    { t: "λ = h/p", k: "math" },
-    { t: "D_KL(P‖Q) = Σ p log(p/q)", k: "math" },
-    { t: "softmax(x_i) = e^{x_i}/Σ e^{x_j}", k: "code" },
-    { t: "loss = -Σ y log ŷ", k: "code" },
-    { t: "θ ← θ − η ∇L", k: "code" },
-    { t: "Adam: m̂, v̂ updates", k: "code" },
-    { t: "y = σ(Wx + b)", k: "math" },
-    { t: "Q(s,a) ← Q + α(r + γ max Q' − Q)", k: "math" },
-    { t: "π₁(S¹) = ℤ", k: "math" },
-    { t: "H_n(X; ℤ)", k: "math" },
-    { t: "χ(X) = V − E + F", k: "math" },
-    { t: "S² ≇ S¹ × S¹", k: "math" },
-    { t: "Hom(A, B)", k: "math" },
-    { t: "lim_{←} F", k: "math" },
-    { t: "colim_{→} F", k: "math" },
-    { t: "id_X : X → X", k: "math" },
-    { t: "z_{n+1} = z_n² + c", k: "math" },
-    { t: "x_{n+1} = r x_n (1 − x_n)", k: "math" },
-    { t: "Cantor: |[0,1]| > |ℕ|", k: "math" },
-    { t: "Banach–Tarski: S² ≅ S² ⊔ S²", k: "math" },
-    { t: "Brouwer: f: B^n → B^n  ⇒  ∃ x. f(x)=x", k: "math" },
-    { t: "Bolzano–Weierstrass", k: "math" },
-    { t: "Hahn–Banach", k: "math" },
-    { t: "Zorn ⇒ AC", k: "math" },
-    { t: "ℵ₀ < 2^{ℵ₀}", k: "math" },
-    { t: "CH:  2^{ℵ₀} = ℵ₁ ?", k: "math" },
-    { t: "RH:  ℜ(s) = 1/2", k: "math" },
-    { t: "f ∘ g : A → C", k: "math" },
-    { t: "[]", k: "symbol" },
-    { t: "{}", k: "symbol" },
-    { t: "()", k: "symbol" },
-    { t: "λ", k: "symbol" },
-    { t: "→", k: "symbol" },
-    { t: "∀", k: "symbol" },
-    { t: "∃", k: "symbol" },
-    { t: "≡", k: "symbol" },
-    { t: "⟂", k: "symbol" },
-    { t: "≠", k: "symbol" },
-    { t: "<*>", k: "symbol" },
-    { t: "<$>", k: "symbol" },
-    { t: ">>=", k: "symbol" },
-    { t: "::", k: "symbol" },
-    { t: "=>", k: "symbol" },
-    { t: "?:", k: "symbol" },
-    { t: "..", k: "symbol" },
-    { t: "|>", k: "symbol" },
-    { t: "<|", k: "symbol" },
-    { t: "::=", k: "symbol" },
-    { t: "⊤", k: "symbol" },
-    { t: "⊥", k: "symbol" },
-    { t: "∘", k: "symbol" },
-    { t: "⊕", k: "symbol" },
-    { t: "⊗", k: "symbol" },
-    { t: "⊙", k: "symbol" },
-    { t: "∂", k: "symbol" },
-    { t: "∇", k: "symbol" },
-    { t: "∫", k: "symbol" },
-    { t: "∑", k: "symbol" },
-    { t: "∏", k: "symbol" },
-    { t: "ℵ₀", k: "symbol" },
-    { t: "ℝ", k: "symbol" },
-    { t: "ℂ", k: "symbol" },
-    { t: "ℕ", k: "symbol" },
-    { t: "ℤ", k: "symbol" },
-    { t: "ℚ", k: "symbol" },
-    { t: "∮", k: "symbol" },
-    { t: "∯", k: "symbol" },
-    { t: "∰", k: "symbol" },
-    { t: "⊨", k: "symbol" },
-    { t: "⊢", k: "symbol" },
-    { t: "⊣", k: "symbol" },
-    { t: "↦", k: "symbol" },
-    { t: "↪", k: "symbol" },
-    { t: "⇌", k: "symbol" },
-    { t: "⇝", k: "symbol" },
-    { t: "⋈", k: "symbol" },
-    { t: "⨁", k: "symbol" },
-    { t: "⨂", k: "symbol" },
-    { t: "⨆", k: "symbol" },
-    { t: "≅", k: "symbol" },
-    { t: "≃", k: "symbol" },
-    { t: "≈", k: "symbol" },
-    { t: "∝", k: "symbol" },
-    { t: "≪", k: "symbol" },
-    { t: "≫", k: "symbol" },
-    { t: "≼", k: "symbol" },
-    { t: "≽", k: "symbol" },
-    { t: "⟦P⟧", k: "symbol" },
-    { t: "|ψ⟩", k: "symbol" },
-    { t: "⟨ψ|", k: "symbol" },
-    { t: "⟨ψ|φ⟩", k: "symbol" },
-    { t: "⌊x⌋", k: "symbol" },
-    { t: "⌈x⌉", k: "symbol" },
-    { t: "ℏ", k: "symbol" },
-    { t: "𝒟", k: "symbol" },
-    { t: "𝓛", k: "symbol" },
-    { t: "ℋ", k: "symbol" },
-    { t: "// proof left in the snow", k: "human" },
-    { t: "home := light + residue", k: "human" },
-    { t: "memory leaks toward the floor", k: "human" },
-    { t: "the theorem remembers the room", k: "human" },
-    { t: "where the chalk keeps falling", k: "human" },
-    { t: "no oracle, only weather", k: "human" },
-    { t: "every proof needs a witness", k: "human" },
-    { t: "the room is part of the proof", k: "human" }
-  ];
-
-  // Rare ghostly drop-ins (~1% of spawns): emoji and short teen-text nonsense.
-  const GHOSTS = [
-    { t: "literally a ghost \uD83D\uDC7B", k: "ghost" },
-    { t: "moon era frfr \uD83C\uDF1A", k: "ghost" },
-    { t: "sparkle moment \u2728", k: "ghost" },
-    { t: "manifesting \u2728\uD83C\uDF20", k: "ghost" },
-    { t: "tea time besties \u2615", k: "ghost" },
-    { t: "donut talk to me \uD83C\uDF69", k: "ghost" },
-    { t: "crashing out rn \uD83C\uDF6B", k: "ghost" },
-    { t: "ate that \uD83E\uDD60", k: "ghost" },
-    { t: "chefs kiss \uD83E\uDD0C", k: "ghost" },
-    { t: "sushi mood \uD83C\uDF63", k: "ghost" },
-    { t: "veggies whatever \uD83E\uDD57", k: "ghost" },
-    { t: "rainbow vibes \uD83C\uDF08", k: "ghost" },
-    { t: "spicy take \uD83C\uDF36", k: "ghost" },
-    { t: "bulb energy \uD83D\uDCA1", k: "ghost" },
-    { t: "delulu hours \uD83D\uDC83", k: "ghost" },
-    { t: "trophy gf \uD83C\uDFC6", k: "ghost" },
-    { t: "no thoughts head empty 🥲", k: "ghost" },
-    { t: "bestie wym 💀💀💀", k: "ghost" },
-    { t: "ok mother 🫶", k: "ghost" },
-    { t: "literally so real rn ✨", k: "ghost" },
-    { t: "not me crying again 😭", k: "ghost" },
-    { t: "the way I gasped 🫢", k: "ghost" },
-    { t: "vibe check passed 🌷", k: "ghost" },
-    { t: "she ate and left no crumbs 🍰", k: "ghost" },
-    { t: "low key obsessed 😵‍💫", k: "ghost" },
-    { t: "this is so core 🪞", k: "ghost" },
-    { t: "delulu but make it fashion 👛", k: "ghost" },
-    { t: "girl help 🧎", k: "ghost" },
-    { t: "the giggle is sending me 🤭", k: "ghost" },
-    { t: "core memory unlocked 🎐", k: "ghost" },
-    { t: "we love a chaotic queen 🦄", k: "ghost" },
-    { t: "bro woke up and chose violence 😤", k: "ghost" },
-    { t: "main character energy 🌟", k: "ghost" },
-    { t: "the math is mathing 📐", k: "ghost" },
-    { t: "POV: it's friday 🕯️", k: "ghost" },
-    { t: "rent free in my brain 🏠💭", k: "ghost" },
-    { t: "cancel my plans 🚫📆", k: "ghost" },
-    { t: "tea: spilled ☕🫖", k: "ghost" },
-    { t: "i fear i am a moth 🪔", k: "ghost" },
-    { t: "my roman empire fr 🏛️", k: "ghost" },
-    { t: "iykyk 🤝", k: "ghost" },
-    { t: "pls and ty 🙏✨", k: "ghost" }
-  ];
-
-  const fall = document.getElementById('fall');
-  const pile = document.getElementById('pile');
-  const fctx = fall.getContext('2d');
-  const pctx = pile.getContext('2d');
-  let dpr, W, H;
-
-  // Geometry — recomputed every frame from a slowly-tracked cxBoard
-  let cxBoard, cxBoardTarget;
-  let topY, rowY = [], pitch, rowGap;
-  let binBaseY, binStartX, binCount;
-  // Per-bin pile arrays. Stored x is absolute (relative to viewport, not board).
-  // We keep pile glyphs anchored to viewport so the lattice can scoot underneath.
-  let bins = [];
-  let falling = [];
-  // Texts currently visible (in flight or in pile) — used to enforce no-repeat snippets
-  const inUseTexts = new Set();
-
-  // ---------- Photo sampler ----------
-  const photo = document.getElementById('bgimg');
-  const sampler = document.createElement('canvas');
-  const sctx = sampler.getContext('2d', { willReadFrequently: true });
-  let photoReady = false, photoData = null, photoW = 0, photoH = 0;
-  let coverScale = 1, coverDX = 0, coverDY = 0;
-
-  function buildSampler(){
-    if (!photo.naturalWidth) return;
-    const targetW = 640;
-    const ratio = photo.naturalHeight / photo.naturalWidth;
-    sampler.width  = targetW;
-    sampler.height = Math.round(targetW * ratio);
-    sctx.filter = 'blur(' + PHOTO_BLUR_PX + 'px)';
-    sctx.drawImage(photo, 0, 0, sampler.width, sampler.height);
-    sctx.filter = 'none';
-    try {
-      photoData = sctx.getImageData(0, 0, sampler.width, sampler.height).data;
-      photoW = sampler.width;
-      photoH = sampler.height;
-      photoReady = true;
-    } catch(e) { photoReady = false; }
-    updateCoverMapping();
-  }
-  function updateCoverMapping(){
-    if (!photo.naturalWidth) return;
-    const iw = photo.naturalWidth, ih = photo.naturalHeight;
-    const cw = innerWidth, ch = innerHeight;
-    coverScale = Math.max(cw/iw, ch/ih);
-    const dw = iw * coverScale, dh = ih * coverScale;
-    coverDX = (cw - dw) * 0.5;
-    coverDY = (ch - dh) * 0.5;
-  }
-  if (photo.complete && photo.naturalWidth) buildSampler();
-  else photo.addEventListener('load', buildSampler);
-
-  function samplePhoto(sx, sy){
-    if (!photoReady) return [200, 210, 225];
-    const nx = (sx - coverDX) / coverScale;
-    const ny = (sy - coverDY) / coverScale;
-    const tx = (nx / photo.naturalWidth) * photoW;
-    const ty = (ny / photo.naturalHeight) * photoH;
-    const ix = Math.max(0, Math.min(photoW-1, tx | 0));
-    const iy = Math.max(0, Math.min(photoH-1, ty | 0));
-    const idx = (iy * photoW + ix) * 4;
-    let r = photoData[idx], g = photoData[idx+1], b = photoData[idx+2];
-    r = Math.min(255, r + 255*PHOTO_LIGHT_BIAS);
-    g = Math.min(255, g + 255*PHOTO_LIGHT_BIAS);
-    b = Math.min(255, b + 255*PHOTO_LIGHT_BIAS);
-    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-    r = lum + (r - lum) * PHOTO_SAT_BOOST;
-    g = lum + (g - lum) * PHOTO_SAT_BOOST;
-    b = lum + (b - lum) * PHOTO_SAT_BOOST;
-    // Chalkboard tone: collapse photo to a chalk-gray range with a faint cool
-    // (blue-white) tint so glyphs read as scrawled chalk on the dark photograph.
-    // Per-glyph luminance jitter is wide so individual marks vary like real chalk.
-    const baseGray = 78 + (lum * 0.12);              // ~78-108 range, biased by photo luminance
-    const jitter = (Math.random() - 0.5) * 36;       // ±18 wide chalk-stroke variation
-    const rr = Math.max(40, Math.min(190, baseGray + jitter - 5));
-    const gg = Math.max(40, Math.min(190, baseGray + jitter));
-    const bb = Math.max(40, Math.min(190, baseGray + jitter + 12));   // gentle cool tint
-    return [rr|0, gg|0, bb|0];
-  }
-
-  // ---------- Atmospheric dust motes ----------
-  // A small population of slow-drifting symbol glyphs at very low alpha,
-  // independent from the spout. Adds spectral depth.
-  const DUST_SYMBOLS = ['λ','∀','∃','∂','∇','∮','∑','∏','π','∞','ℵ','ℝ','ℂ','ℕ','ℤ','ℚ','ψ','φ','θ','σ','τ','ε','δ','κ','μ','η','ξ','ζ','≅','≈','≠','≡','⊕','⊗','↦','⇝','⊢','⊨'];
-  const DUST_COUNT = 50;
-  const dustMotes = [];
-  function initDust(){
-    dustMotes.length = 0;
-    for (let i = 0; i < DUST_COUNT; i++){
-      dustMotes.push({
-        text: DUST_SYMBOLS[(Math.random()*DUST_SYMBOLS.length)|0],
-        x: Math.random()*innerWidth,
-        y: Math.random()*innerHeight,
-        size: 7 + Math.random()*10,
-        vy: 1.5 + Math.random()*7,
-        phase: Math.random()*Math.PI*2,
-        alpha: 0.020 + Math.random()*0.055,
-        italic: Math.random() < 0.7
-      });
-    }
-  }
-  function tickDust(dt){
-    for (const m of dustMotes){
-      m.y += m.vy * dt;
-      m.x += Math.sin(m.y*0.007 + m.phase) * 0.06;
-      if (m.y > innerHeight + 30){
-        m.text = DUST_SYMBOLS[(Math.random()*DUST_SYMBOLS.length)|0];
-        m.x = Math.random()*innerWidth;
-        m.y = -30 - Math.random()*70;
-        m.size = 7 + Math.random()*10;
-        m.alpha = 0.020 + Math.random()*0.055;
-        m.italic = Math.random() < 0.7;
-      }
-    }
-  }
-  function drawDust(now){
-    fctx.save();
-    fctx.textAlign = "center";
-    fctx.textBaseline = "middle";
-    fctx.globalCompositeOperation = "screen";
-    for (const m of dustMotes){
-      const a = m.alpha * (0.74 + 0.26*Math.sin(now*0.0007 + m.phase));
-      fctx.font = (m.italic ? "italic " : "") + m.size.toFixed(1) + "px " + MATH_FONT_FAMILY;
-      fctx.fillStyle = "rgba(220,228,242," + a.toFixed(3) + ")";
-      fctx.fillText(m.text, m.x, m.y);
-    }
-    fctx.restore();
-  }
-
-  // ---------- Click-pulse rings (echo of pointerdown) ----------
-  const pulses = [];
-  const PULSE_LIFE_MS = 1200;
-  function tickPulses(now){
-    for (let i = pulses.length - 1; i >= 0; i--){
-      if (now - pulses[i].birth > PULSE_LIFE_MS) pulses.splice(i, 1);
-    }
-  }
-  function drawPulses(now){
-    if (pulses.length === 0) return;
-    fctx.save();
-    fctx.globalCompositeOperation = "screen";
-    fctx.lineWidth = 1.1;
-    for (const p of pulses){
-      const t = (now - p.birth) / PULSE_LIFE_MS;
-      if (t < 0 || t >= 1) continue;
-      const r = 18 + t * 96;
-      const a = 0.20 * (1 - t);
-      fctx.beginPath();
-      fctx.arc(p.x, p.y, r, 0, Math.PI*2);
-      fctx.strokeStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
-      fctx.stroke();
-    }
-    fctx.restore();
-  }
-
-  // ---------- Click-to-burst handler ----------
-  // On pointerdown, throw a soft ring pulse and a small handful of chalk glyphs
-  // at the cursor x. Pure additive; doesn't affect the spout cadence.
-  addEventListener('pointerdown', (e) => {
-    pulses.push({ x: e.clientX, y: e.clientY, birth: performance.now() });
-    const n = 7 + ((Math.random()*4)|0);
-    for (let i = 0; i < n; i++) spawn(e.clientX);
-  }, { passive: true });
-
-  // ---------- Audio ----------
-  let actx = null;
-  function ensureAudio(){ if (actx) return; try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
-  function plink(){
-    if (!actx) return;
-    const t = actx.currentTime;
-    const o = actx.createOscillator();
-    const g = actx.createGain();
-    const f = 520 + Math.random()*420;
-    o.type = 'sine';
-    o.frequency.setValueAtTime(f, t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(120, f*0.55), t+0.18);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(PLINK_VOL, t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t+0.32);
-    o.connect(g).connect(actx.destination);
-    o.start(t); o.stop(t+0.36);
-  }
-  addEventListener('pointerdown', ensureAudio);
-  addEventListener('keydown',     ensureAudio);
-
-  // ---------- Cursor tracking ----------
-  // The whole peg lattice translates so its center column sits under the cursor.
-  let cursorX = innerWidth * 0.5;
-  let lastCursorMoveAt = -1e9; // start in "idle" so auto-drift can begin if user never moves cursor
-  addEventListener('pointermove', (e) => {
-    if (Math.abs(e.clientX - cursorX) > 0.5 || lastCursorMoveAt < 0) {
-      lastCursorMoveAt = performance.now();
-    }
-    cursorX = e.clientX;
-    ensureAudio();
-  });
-
-  // ---------- Layout ----------
-  function buildBoard(){
-    cxBoard       = innerWidth * 0.5;
-    cxBoardTarget = innerWidth * 0.5;
-    topY    = Math.max(80, innerHeight * 0.16);
-    binBaseY = innerHeight - 24;
-    pitch  = Math.min(PEG_PITCH_PX, (innerWidth - 80) / (ROWS + 2));
-    rowGap = Math.min(ROW_GAP_PX, (innerHeight - 240 - topY - 30) / (ROWS + 1));
-    rowY = [];
-    for (let r=0; r<ROWS; r++) rowY.push(topY + (r+1) * rowGap);
-    // binCount used only for the Galton k-index range (-ROWS..+ROWS lands in ROWS+1 columns)
-    binCount = ROWS + 1;
-    rebuildBins();
-  }
-  // Bins are a FIXED viewport-spanning spatial grid. The Galton lattice and spout drift
-  // around freely on top of them; bins themselves never move so the pile is never
-  // spatially destroyed when the spout sweeps horizontally.
-  function rebuildBins(){
-    const cellsAcross = Math.max(8, Math.ceil(innerWidth / pitch) + 4);
-    binStartX = -pitch; // start a cell to the left of the viewport so edge x=0 is covered
-    if (!bins.length || bins.length !== cellsAcross){
-      bins = [];
-      for (let i=0; i<cellsAcross; i++){
-        const x0 = binStartX + i*pitch;
-        bins.push({ x0, x1: x0 + pitch, glyphs: [], topY: binBaseY });
-      }
-    }
-    // If bins already exist with the right count we leave their x0/x1 alone — the spatial
-    // grid is permanent and glyphs stored in them remain spatially correct.
-  }
-  // Spatial lookup — index of the bin that owns this absolute viewport x.
-  function binIndexFor(x){
-    const idx = Math.floor((x - bins[0].x0) / pitch);
-    return Math.max(0, Math.min(bins.length - 1, idx));
-  }
+  let W=0, H=0, DPR=1;
   function resize(){
-    dpr = window.devicePixelRatio || 1;
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
     W = innerWidth; H = innerHeight;
-    for (const c of [fall, pile]){
-      c.width  = Math.floor(W*dpr);
-      c.height = Math.floor(H*dpr);
+    for (const c of [fieldC, fallC, marksC]){
+      c.width = W*DPR; c.height = H*DPR;
+      c.style.width = W+'px'; c.style.height = H+'px';
+      c.getContext('2d').setTransform(DPR,0,0,DPR,0,0);
     }
-    // Pile canvas was auto-cleared by the width/height reassignment above; mark every
-    // landed glyph as un-rendered so the accumulating pile re-commits onto the fresh canvas.
-    if (typeof bins !== 'undefined' && bins){
-      for (let i=0;i<bins.length;i++){ const b=bins[i]; if(!b||!b.glyphs) continue;
-        for (let j=0;j<b.glyphs.length;j++){ b.glyphs[j].rendered = false; } }
-    }
-    for (const cx of [fctx, pctx]){
-      cx.setTransform(dpr,0,0,dpr,0,0);
-      cx.font = FONT_PX + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-      cx.textBaseline = "middle";
-      cx.textAlign = "center";
-    }
-    buildBoard();
-    updateCoverMapping();
-    initDust();
+    rebuildBoard();
+    rebuildField();
   }
-  resize();
   addEventListener('resize', resize);
 
-  // ---------- Spawning ----------
-  function spawn(xOverride){
-    if (falling.length >= MAX_FALLING) return;
-    const isBurst = (xOverride != null);
-    // Pick a snippet whose text is not currently visible anywhere on screen.
-    // Walk SNIPPETS starting from a random offset; first one not in inUseTexts wins.
-    let pick = null;
-    // Rare ghost drops: with GHOST_PROBABILITY chance, pick from GHOSTS instead.
-    if (!isBurst && Math.random() < GHOST_PROBABILITY){
-      const gStart = (Math.random()*GHOSTS.length)|0;
-      for (let off=0; off<GHOSTS.length; off++){
-        const cand = GHOSTS[(gStart + off) % GHOSTS.length];
-        if (!inUseTexts.has(cand.t)){ pick = cand; break; }
-      }
-      if (pick === null) pick = GHOSTS[gStart];
-    } else {
-      const startIdx = (Math.random()*SNIPPETS.length)|0;
-      for (let off=0; off<SNIPPETS.length; off++){
-        const cand = SNIPPETS[(startIdx + off) % SNIPPETS.length];
-        if (!inUseTexts.has(cand.t)){ pick = cand; break; }
-      }
-      if (pick === null) pick = SNIPPETS[(Math.random()*SNIPPETS.length)|0];
+  // ---------- Galton lattice ----------
+  let pegs=[], rowY=[], lastRowY=0, spoutX=0;
+  function rebuildBoard(){
+    pegs.length=0; rowY.length=0;
+    const cy0 = Math.max(80, H*0.10);
+    spoutX = W*0.5;
+    for (let r=0; r<ROWS; r++){
+      const y = cy0 + r*ROW_GAP;
+      rowY.push(y);
+      const cols = r+2;
+      const totalW = (cols-1)*PEG_PITCH;
+      const x0 = spoutX - totalW*0.5;
+      for (let c=0; c<cols; c++) pegs.push({x: x0 + c*PEG_PITCH, y});
     }
-    const text = pick.t;
-    const kind = pick.k;
-    const ghost = (kind === "ghost");
-    inUseTexts.add(text);
-    // Per-flake typography: code stays monospace, math/symbols get serif italic at larger size.
-    const fontObj = pickFont(kind);
-    const fontStr = fontCSS(fontObj);
-    const cxSnap = cxBoard;                         // freeze the lattice for this flake
-    const x = (isBurst ? xOverride + (Math.random()-0.5)*22 : cxSnap + (Math.random()-0.5)*16);
-    // Spawn y must always be ABOVE the current pile top near the spout, so as the pile
-    // grows up past topY the spout effectively rises with it and flakes never spawn inside the heap.
-    const restAtSpoutY = restingYFor(x);   // y of (just above) highest pile near spout x
-    // Spout effectively tops out at SPOUT_CEILING_PX above the viewport. Once the pile has
-    // grown that high, new flakes keep spawning just above the screen rather than rising
-    // ever further into the void — the user always sees fresh activity falling.
-    const SPOUT_CEILING_PX = -50;
-    const spoutY = Math.max(SPOUT_CEILING_PX, Math.min(topY, restAtSpoutY));
-    const y = spoutY - 30 - Math.random()*60;
-    const vy = FALL_SPEED * (1 + (Math.random()*2-1)*FALL_SPEED_VAR);
-    falling.push({
-      text, x, y, vy,
-      kind, ghost,
-      fontObj, fontStr,                  // per-flake typography (stable across all frames)
-      k: 0,
-      cxSnap,                            // each flake renders against its own snapshot of cxBoard
-      prevAnchorX: cxSnap,
-      nextAnchorX: cxSnap,
-      tStartY: y,
-      tEndY:   rowY[0],
-      // Lattice anchor offsets (relative to cxBoard) so the lattice can shift mid-fall
-      prevAnchorOffX: 0,
-      nextAnchorOffX: 0,
-      nextRow: 0,
-      hue: Math.random(),
-      swayPhase: Math.random()*Math.PI*2,
-      rotAmp:    ROT_AMP_MIN + Math.random()*(ROT_AMP_MAX-ROT_AMP_MIN),
-      rotPeriod: ROT_PERIOD_MIN + Math.random()*(ROT_PERIOD_MAX-ROT_PERIOD_MIN),
-      rotPhase:  Math.random()*Math.PI*2,
-      rotDir:    Math.random()<0.5 ? -1 : 1,
-      birth: performance.now(),
-      lastPlink: 0,
-      // Pile-physics state
-      piling: false,         // true once below the last peg row
-      pileBin: -1,
-      pileX: 0               // anchored-to-bin x at pile time (won't sway anymore)
+    lastRowY = rowY[rowY.length-1] + ROW_GAP*0.6;
+  }
+
+  // ---------- Field state ----------
+  let nCols=0, h=null, dens=null, densW=0, densH=0;
+  function rebuildField(){
+    nCols = Math.max(8, Math.ceil(W/COL_PX));
+    h = new Float32Array(nCols);
+    densW = Math.ceil(W/DENS_PX);
+    densH = Math.ceil(H/DENS_PX);
+    dens = new Float32Array(densW*densH);
+  }
+  const baselineY = () => H - 8;
+  const colOfX = (x) => Math.max(0, Math.min(nCols-1, (x/COL_PX)|0));
+  const xOfCol = (i) => (i+0.5)*COL_PX;
+
+  // ---------- Glyph dictionary ----------
+  const DICT = [
+    {t: "P(A and B) = P(A)P(B|A)", k: "math"},
+    {t: "lim (1+1/n)^n = e",       k: "math"},
+    {t: "Σ 1/n² = π²/6",           k: "math"},
+    {t: "Σ 1/n⁴ = π⁴/90",          k: "math"},
+    {t: "ζ(s) = Σ 1/n^s",          k: "math"},
+    {t: "ζ(s) = ∏ 1/(1 − p^{-s})", k: "math"},
+    {t: "γ = lim (Σ 1/k − ln n)",  k: "math"},
+    {t: "π(n) ~ n / ln n",         k: "math"},
+    {t: "Σ μ(d) = [n=1]",          k: "math"},
+    {t: "Σ_{d|n} φ(d) = n",        k: "math"},
+    {t: "(p−1)! ≡ −1 (mod p)",     k: "math"},
+    {t: "e^x = Σ x^n / n!",        k: "math"},
+    {t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math"},
+    {t: "cos x = Σ (−1)^n x^{2n}/(2n)!",     k: "math"},
+    {t: "1729 = 1³+12³ = 9³+10³",  k: "math"},
+    {t: "central limit theorem",   k: "human"},
+    {t: "binomial → gaussian",     k: "human"},
+    {t: "angle of repose",         k: "human"},
+    {t: "mean reverts; tails persist", k: "human"},
+    {t: "chalk dust",              k: "human"},
+    {t: "erase, then return",      k: "human"},
+    {t: "a board worn by use",     k: "human"},
+    {t: "main character energy ✨", k: "ghost"},
+    {t: "the math is mathing 📐",  k: "ghost"},
+    {t: "bestie wym 💀",           k: "ghost"},
+    {t: "no thoughts head empty 🫧", k: "ghost"},
+    {t: "core memory unlocked 🎐", k: "ghost"},
+    {t: "low key obsessed 😵",     k: "ghost"},
+    {t: "vibe check passed 🌷",    k: "ghost"},
+    {t: "we love a chaotic queen 🦄", k: "ghost"},
+  ];
+  const FONTS = {
+    math:  "italic " + (FONT_PX+2) + "px Cambria Math, STIX Two Math, Georgia, serif",
+    human: "italic " + (FONT_PX+1) + "px Iowan Old Style, Palatino, Georgia, serif",
+    ghost: FONT_PX + "px ui-monospace, Menlo, Consolas, monospace",
+    code:  FONT_PX + "px ui-monospace, Menlo, Consolas, monospace",
+  };
+  // ---------- Falling tokens ----------
+  const flakes = [];
+  let lastSpawn = 0, nextSpawn = SPAWN_MS_EARLY;
+
+  function spawn(){
+    if (flakes.length >= MAX_FALLING) return;
+    const d = DICT[(Math.random()*DICT.length)|0];
+    flakes.push({
+      t: d.t, k: d.k,
+      x: spoutX + (Math.random()-0.5)*8,
+      y: rowY[0] - 30,
+      vy: FALL_SPEED * (1 + (Math.random()-0.5)*FALL_SPEED_VAR),
+      phase: Math.random()*Math.PI*2,
+      rot: (Math.random()-0.5)*0.2,
+      row: 0, born: performance.now(),
     });
   }
-  let lastSpawn = 0;
-  let nextSpawnIn = SPAWN_MS_MIN;
 
-  function ease(t){
-    if (t <= 0) return 0;
-    if (t >= 1) return 1;
-    return 0.5 - 0.5*Math.cos(t*Math.PI);
+  function stepPeg(g){
+    if (Math.random() < STEP_P) g.x -= PEG_PITCH*0.5;
+    else                        g.x += PEG_PITCH*0.5;
+    plink();
   }
 
-  // The vertical y at which a flake "rests" when it lands at absolute x = px.
-  // Spatial: look across the entire pile for the highest existing glyph within a
-  // ~STACK_STEP-wide horizontal neighborhood of px, and rest one stack-step above it.
-  // This way the heap accumulates SPATIALLY (cursor sweeps build a wide drift), and
-  // committed pile glyphs are never moved or mutated again.
-  function restingYFor(px){
-    let topY = binBaseY;
-    const radius = STACK_STEP * 1.25;
-    // Pre-filter by per-bin topY and x range — keeps perf sane as the pile grows huge.
-    for (let bi=0; bi<bins.length; bi++){
-      const b = bins[bi];
-      if (b.topY >= topY) continue;
-      if (b.x1 < px - radius - pitch || b.x0 > px + radius + pitch) continue;
-      const gs = b.glyphs;
-      for (let j=gs.length-1; j>=0; j--){
-        const gd = gs[j];
-        if (gd.y >= topY) continue;
-        if (Math.abs(gd.x - px) <= radius) topY = gd.y;
+  // ---------- Audio ----------
+  let actx=null, lastPlink=0;
+  function ensureAudio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
+  function plink(){
+    if(!actx) return;
+    const now = performance.now();
+    if (now - lastPlink < PLINK_COOLDOWN) return;
+    lastPlink = now;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "triangle";
+    o.frequency.value = 1100 + Math.random()*900;
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(PLINK_VOL, actx.currentTime+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+0.10);
+    o.connect(g).connect(actx.destination);
+    o.start(); o.stop(actx.currentTime+0.12);
+  }
+  addEventListener("pointerdown", ()=>{ ensureAudio(); }, {once:true, passive:true});
+  // ---------- Marks ----------
+  const marks = [];
+  function pushMark(i, text, k, alpha){
+    const cap = lerp(MAX_MARKS_BASE, MAX_MARKS_LATE, progressEased());
+    while (marks.length > cap) marks.shift();
+    marks.push({
+      i: i, hFrac: 0.98,
+      text: text, k: k,
+      rot: (Math.random()-0.5)*0.45,
+      alpha: alpha, age: 0,
+      jitterX: (Math.random()-0.5)*COL_PX*1.6,
+    });
+  }
+
+  // ---------- Density grid ----------
+  function depositDens(px, py, amt){
+    const ci = (px/DENS_PX)|0, cj = (py/DENS_PX)|0;
+    for (let dj=-DENS_BLOOM; dj<=DENS_BLOOM; dj++){
+      for (let di=-DENS_BLOOM; di<=DENS_BLOOM; di++){
+        const i = ci+di, j = cj+dj;
+        if (i<0||i>=densW||j<0||j>=densH) continue;
+        const r2 = di*di+dj*dj;
+        const w = Math.exp(-r2/(DENS_BLOOM*0.7));
+        const k2 = j*densW+i;
+        dens[k2] = Math.min(1, dens[k2] + amt*w);
       }
     }
-    return topY - STACK_STEP - (Math.random()*2-1)*STACK_VARIANCE;
   }
 
-  // Highest existing pile y (smallest y value) whose absolute x is in [xMin, xMax].
-  // Returns binBaseY when nothing is in the range — i.e. "ground".
-  function highestPileYInRange(xMin, xMax){
-    let topY = binBaseY;
-    for (let bi=0; bi<bins.length; bi++){
-      const b = bins[bi];
-      if (b.topY >= topY) continue;
-      if (b.x1 < xMin || b.x0 > xMax) continue;
-      const gs = b.glyphs;
-      for (let j=gs.length-1; j>=0; j--){
-        const gd = gs[j];
-        if (gd.y >= topY) continue;
-        if (gd.x >= xMin && gd.x <= xMax) topY = gd.y;
+  // ---------- Helpers ----------
+  let T0 = performance.now();
+  function progress(){ return Math.min(1, (performance.now()-T0)/(RUNTIME_S*1000)); }
+  function progressEased(){ const p=progress(); return p<0.5? 2*p*p : 1 - Math.pow(-2*p+2,2)/2; }
+  function lerp(a,b,t){ return a + (b-a)*t; }
+  // ---------- Field dynamics ----------
+  function fieldStep(dt){
+    if(!h) return;
+    const p = progressEased();
+    const erosion = lerp(EROSION_BASE, EROSION_LATE, p);
+    const flow    = lerp(FLOW_RATE_BASE, FLOW_RATE_LATE, p);
+    const cap     = H*FIELD_CAP_FRAC;
+
+    // 1) Compression: each column shrinks proportional to its own height.
+    //    Tall middle columns sink fastest, so the bell stays bell-shaped.
+    for (let i=0; i<nCols; i++){
+      if (h[i] > 0) {
+        h[i] -= h[i] * erosion * dt;
+        if (h[i] < 0) h[i] = 0;
       }
     }
-    return topY;
+
+    // 2) Lateral transport: slope-limited flow between neighbors.
+    for (let pass=0; pass<2; pass++){
+      const dir = pass===0 ? 1 : -1;
+      const start = dir>0 ? 0 : nCols-2;
+      const end   = dir>0 ? nCols-1 : -1;
+      for (let i=start; i!==end; i+=dir){
+        const j = i+1;
+        if (j<0 || j>=nCols) continue;
+        const dh = h[i] - h[j];
+        const slope = dh / COL_PX;
+        if (Math.abs(slope) > REPOSE_SLOPE){
+          const excess = (Math.abs(slope) - REPOSE_SLOPE) * COL_PX;
+          const move = Math.sign(dh) * excess * flow * dt * 60;
+          h[i] -= move; h[j] += move;
+        }
+      }
+    }
+
+    // 3) Cap and density decay
+    for (let i=0; i<nCols; i++) if (h[i] > cap) h[i] = cap;
+    if (p > 0.05){
+      const decay = DENS_DECAY * (1 + p*2);
+      for (let k=0; k<dens.length; k++) if (dens[k]>0) dens[k] = Math.max(0, dens[k]-decay);
+    }
+
+    // 4) Marks ride the surface and slide off the shoulders.
+    for (let m=0; m<marks.length; m++){
+      const mk = marks[m];
+      mk.age += dt;
+      mk.alpha = Math.max(MARK_FADE_FLOOR, mk.alpha - 0.012*dt);
+      if (mk.hFrac > 0.55){
+        const i = mk.i;
+        const here = h[i];
+        const left  = i>0       ? h[i-1] : Infinity;
+        const right = i<nCols-1 ? h[i+1] : Infinity;
+        // slide toward the lower neighbor when the slope is steep enough
+        if (left  < here - COL_PX*REPOSE_SLOPE && Math.random()<0.35) mk.i = Math.max(0, mk.i - 1);
+        else if (right < here - COL_PX*REPOSE_SLOPE && Math.random()<0.35) mk.i = Math.min(nCols-1, mk.i + 1);
+      }
+    }
+  }
+  // ---------- Landing: token -> field deposit ----------
+  function land(g){
+    const i = colOfX(g.x);
+    const STEP = FONT_PX*0.95;
+    const cap = H*FIELD_CAP_FRAC;
+    h[i] = Math.min(cap, h[i] + STEP);
+    const surfY = baselineY() - h[i];
+    depositDens(g.x, surfY, DENS_DEPOSIT);
+    pushMark(i, g.t, g.k, 0.95);
   }
 
-  // ---------- Physics ----------
-  function tickPhysics(dt, now){
-    // ease cxBoard toward an evolving target. Two modes:
-    //   (a) cursor-tracking — normal: target follows cursorX (clamped to viewport).
-    //   (b) idle auto-drift  — when the cursor has been still for IDLE_DRIFT_DELAY_MS AND
-    //       the pile near the current spout has reached IDLE_DRIFT_TRIGGER_PX from the top,
-    //       the spout slowly oscillates across the viewport so the screen fills evenly.
-    const halfSpan = (binCount-1) * 0.5 * pitch + pitch * 0.5 + 20;
-    const cursorTarget = Math.max(halfSpan, Math.min(innerWidth - halfSpan, cursorX));
-    // Pressure-based drift: as the pile under the spout climbs above DRIFT_TRIGGER_PX,
-    // the spout starts sliding sideways. At DRIFT_FULL_PX the cursor is mostly overridden.
-    const pileTopHere = restingYFor(cxBoard); // y of pile top under current spout
-    let driftWeight = 0;
-    if (pileTopHere < DRIFT_TRIGGER_PX){
-      const range = DRIFT_TRIGGER_PX - DRIFT_FULL_PX;
-      const t = (DRIFT_TRIGGER_PX - pileTopHere) / Math.max(1, range);
-      driftWeight = Math.max(0, Math.min(1, t));
-    }
-    let target;
-    if (driftWeight > 0){
-      // sin-oscillate across the usable width; phase advances on a wall clock so
-      // drift keeps moving even as the user wiggles the cursor.
-      const phaseSec = now * 0.001;
-      const tPhase = Math.sin(phaseSec * (2*Math.PI / DRIFT_PERIOD_S));
-      const driftTarget = innerWidth * 0.5 + tPhase * (innerWidth * 0.5 - halfSpan);
-      // Mix: at full drift, cursor still contributes DRIFT_CURSOR_BIAS so it isn't dead.
-      const cursorMix = (1 - driftWeight) + driftWeight * DRIFT_CURSOR_BIAS;
-      target = driftTarget * (1 - cursorMix) + cursorTarget * cursorMix;
-    } else {
-      target = cursorTarget;
-    }
-    cxBoard += (target - cxBoard) * CURSOR_TRACK_LERP;
-    rebuildBins(); // bins follow lattice
+  // ---------- Render: falling layer ----------
+  function drawFalling(dt){
+    tctx.globalCompositeOperation = "destination-out";
+    tctx.fillStyle = "rgba(0,0,0," + TRAIL_FADE.toFixed(3) + ")";
+    tctx.fillRect(0,0,W,H);
+    tctx.globalCompositeOperation = "source-over";
 
-    for (let i=falling.length-1; i>=0; i--){
-      const g = falling[i];
+    const now = performance.now();
+    for (let i=flakes.length-1; i>=0; i--){
+      const g = flakes[i];
+      while (g.row < ROWS && g.y >= rowY[g.row]) {
+        stepPeg(g);
+        g.row++;
+      }
+      g.y += g.vy * dt;
+      g.x += Math.sin(now*0.001*Math.PI*2*SWAY_FREQ_HZ + g.phase) * SWAY_AMP * dt;
 
-      if (g.piling){
-        // Free fall in the bin zone at the flake's existing velocity (no gravity).
-        g.y += g.vy * dt;
-        const b = bins[g.pileBin];
-        const restY = restingYFor(g.pileX);
-
-        // Soft-settle: decelerate vy as the flake nears its resting y so the
-        // landing reads like a leaf coming to rest, not a snap.
-        {
-          const _dToRest = restY - g.y;
-          if (_dToRest > 0 && _dToRest < SETTLE_BAND){
-            g.vy += (SETTLE_LAND_VY - g.vy) * SETTLE_DAMP;
-          }
-        }
-
-        if (g.y >= restY){
-          // Touched the surface. Check left/right neighbor heights for slope.
-          g.y = restY;
-          const sideR = STACK_STEP * SIDE_PROBE_RADIUS;
-          const inner = STACK_STEP * 0.6;
-          const leftTopY  = highestPileYInRange(g.pileX - sideR, g.pileX - inner);
-          const rightTopY = highestPileYInRange(g.pileX + inner, g.pileX + sideR);
-          const slopeT = STACK_STEP * SLOPE_THRESHOLD;
-
-          let slid = false;
-          if (rightTopY - leftTopY > slopeT){
-            // Right side is lower — slide right
-            g.pileX += SLIDE_SPEED * dt;
-            g.x = g.pileX;
-            slid = true;
-          } else if (leftTopY - rightTopY > slopeT){
-            // Left side is lower — slide left
-            g.pileX -= SLIDE_SPEED * dt;
-            g.x = g.pileX;
-            slid = true;
-          }
-
-          if (slid){
-            // Re-evaluate the resting y at the new pileX. If the ground is lower there,
-            // let the flake keep falling at its natural vy (continuous physical descent).
-            const newRestY = restingYFor(g.pileX);
-            if (newRestY > g.y){
-              // gentle hand-off: don't snap down; just let g.y march toward newRestY at vy
-            } else {
-              g.y = newRestY;
-            }
-            continue;
-          }
-
-          // Stable spot — commit to the pile.
-          const tSec0 = (now - g.birth) * 0.001;
-          const rotNow = Math.sin(tSec0 / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
-          const restRot = rotNow + (Math.random()*2-1) * PILE_REST_ROT;
-          b.glyphs.push({
-            text: g.text,
-            x: g.pileX,
-            y: g.y,
-            rot: restRot,
-            fontStr: g.fontStr,
-            fontSize: g.fontObj.size,
-            ghost: g.ghost,
-            landedAt: now
-          });
-          if (g.y < b.topY) b.topY = g.y;
-          // Free the text immediately so the same snippet can fall again — once a glyph is
-          // part of the static pile it's effectively wallpaper, and we want the screen to
-          // fill faster than 343 unique strings would otherwise allow.
-          inUseTexts.delete(g.text);
-          falling.splice(i,1);
-        }
+      const ci = colOfX(g.x);
+      const surf = baselineY() - h[ci];
+      if (g.y >= surf - 2 && g.row >= ROWS){
+        land(g);
+        flakes.splice(i,1);
         continue;
       }
 
-      // ---- Free fall + lattice transitions ----
-      g.y += g.vy * dt;
-
-      // Soft-settle (continuous): decelerate vy as a non-piling flake approaches
-      // the projected restY at its current x. Gives every flake a leaf-fall arrival.
-      if (!g.ghost){
-        const _restY = restingYFor(g.x);
-        const _dToRest = _restY - g.y;
-        if (_dToRest > 0 && _dToRest < SETTLE_BAND){
-          g.vy += (SETTLE_LAND_VY - g.vy) * SETTLE_DAMP;
-        }
-      }
-
-      // ---- Continuous pile-surface collision (prevents fall-through across all lattice rows) ----
-      // The Galton lattice happily lets flakes traverse rowY[r] even when the pile has risen above
-      // those rows. Without an extra check, glyphs visibly fall through the heap. So every frame
-      // during free-fall we also test against restingYFor(g.x); if we've crossed the surface we
-      // commit to the pile at the current x immediately.
-      {
-        const restY = restingYFor(g.x);
-        if (g.y >= restY && !g.ghost){
-          // figure out which bin's container to push into (spatial, not lattice-index based)
-          let bIdx = 0;
-          let bestDx = Infinity;
-          for (let bi=0; bi<bins.length; bi++){
-            const b = bins[bi];
-            const cx = (b.x0 + b.x1) * 0.5;
-            const dx = Math.abs(cx - g.x);
-            if (dx < bestDx){ bestDx = dx; bIdx = bi; }
-          }
-          const b = bins[bIdx];
-          g.pileBin = bIdx;
-          g.pileX = g.x;
-          g.y = restY;
-          // Commit immediately. Don't bother with the seesaw rotation easing here — use the
-          // current visual rotation as the resting rotation (no orientation snap).
-          const tSec0 = (now - g.birth) * 0.001;
-          const rotNow = Math.sin(tSec0 / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
-          const restRot = rotNow + (Math.random()*2-1) * PILE_REST_ROT;
-          b.glyphs.push({
-            text: g.text,
-            x: g.pileX,
-            y: g.y,
-            rot: restRot,
-            fontStr: g.fontStr,
-            fontSize: g.fontObj.size,
-            ghost: g.ghost,
-            landedAt: now
-          });
-          if (g.y < b.topY) b.topY = g.y;
-          inUseTexts.delete(g.text);
-          falling.splice(i,1);
-          continue;
-        }
-      }
-
-      while (g.nextRow < ROWS && g.y >= rowY[g.nextRow]){
-        g.prevAnchorOffX = g.nextAnchorOffX;
-        const dir = Math.random() < 0.5 ? -1 : 1;
-        g.k += dir;
-        g.nextAnchorOffX = g.k * (pitch * 0.5);
-        g.tStartY = rowY[g.nextRow];
-        g.tEndY   = (g.nextRow+1 < ROWS) ? rowY[g.nextRow+1] : (rowY[ROWS-1] + rowGap*0.6);
-        g.nextRow++;
-        if (Math.random() < STEP_NUDGE_PROB && now - g.lastPlink > PLINK_COOLDOWN){
-          g.lastPlink = now;
-          plink();
-        }
-      }
-
-      // Continuous interpolated x along current transition, anchored to (live) cxBoard
-      const denom = Math.max(0.001, g.tEndY - g.tStartY);
-      const tt = ease((g.y - g.tStartY) / denom);
-      const offX = g.prevAnchorOffX + (g.nextAnchorOffX - g.prevAnchorOffX) * tt;
-      const sway  = Math.sin(now*0.001 * SWAY_FREQ_HZ * Math.PI*2 + g.swayPhase) * SWAY_AMP;
-      g.x = g.cxSnap + offX + sway;
-
-      // Once past the last peg row, switch to pile-falling physics
-      if (g.nextRow >= ROWS && !g.piling && !g.ghost){
-        let kFinal = g.k;
-        if (kFinal < -ROWS) kFinal = -ROWS;
-        if (kFinal >  ROWS) kFinal =  ROWS;
-        if (((kFinal + ROWS) & 1) !== 0){
-          kFinal += (Math.random()<0.5 ? -1 : 1);
-          if (kFinal < -ROWS) kFinal = -ROWS;
-          if (kFinal >  ROWS) kFinal =  ROWS;
-        }
-        // bin center is anchored to the flake's OWN cxSnap so cursor motion never drags in-flight piles
-        const cx = g.cxSnap + (kFinal * pitch * 0.5);
-        // jitter inside the bin so the pile looks like a junk heap, not a stack
-        g.pileX  = cx + (Math.random()-0.5) * (pitch * PILE_X_JITTER);
-        g.x      = g.pileX;
-        g.pileBin = binIndexFor(g.pileX); // spatial lookup against the fixed viewport grid
-        g.piling = true;
-      }
-
-      if (g.y > innerHeight + 120 || g.x < -100 || g.x > innerWidth + 100){
-        inUseTexts.delete(g.text);
-        falling.splice(i,1);
-      }
-    }
-
-    // Pile is IMMUTABLE once landed — never move, rewrite, or remove a settled glyph.
-    // The pile is allowed to grow unboundedly so the photograph is gradually
-    // covered by an ever-deepening junk-heap of code and equations. (no-op intentionally.)
-  }
-
-  function alphaForFall(now, g){
-    let a = Math.min(1, (now - g.birth) / FADE_IN_MS);
-    return GLYPH_ALPHA * a;
-  }
-
-  function drawFalling(now){
-    fctx.globalCompositeOperation = 'destination-out';
-    fctx.fillStyle = 'rgba(0,0,0,'+TRAIL_FADE+')';
-    fctx.fillRect(0,0,W,H);
-    fctx.globalCompositeOperation = 'source-over';
-
-    for (let i=0;i<falling.length;i++){
-      const g = falling[i];
-      let a = alphaForFall(now, g);
-      if (g.ghost) a *= GHOST_ALPHA_MUL;
-      if (a <= 0.001) continue;
-      const c = samplePhoto(g.x, g.y);
-      const tSec = (now - g.birth) * 0.001;
-      let rot = Math.sin(tSec / g.rotPeriod * Math.PI*2 + g.rotPhase) * g.rotAmp * g.rotDir;
-      // While piling, the flake keeps rocking at its natural rate — its landing rotation
-      // is captured the moment it lands so there's no rotational snap into the pile.
-      fctx.save();
-      fctx.translate(g.x, g.y);
-      fctx.rotate(rot);
-      fctx.font = g.fontStr;
-      fctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')';
-      fctx.fillText(g.text, 0, 0);
-      fctx.restore();
+      const a = Math.min(1, (now - g.born)/700) * GLYPH_ALPHA * (g.k==="ghost"?0.85:1);
+      tctx.save();
+      tctx.translate(g.x, g.y);
+      tctx.rotate(g.rot);
+      tctx.font = FONTS[g.k] || FONTS.code;
+      tctx.fillStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
+      tctx.textAlign = "center"; tctx.textBaseline = "middle";
+      tctx.fillText(g.t, 0, 0);
+      tctx.restore();
     }
   }
-
-  function drawPile(now){
-    // Etched chalkboard: never clear. Each landed glyph is committed to the pile
-    // canvas exactly once. Each commit is a 3-pass paint:
-    //   1) wide, low-alpha black halo  → separates glyph from existing pile texture
-    //   2) tight, high-alpha black stroke → gives the character a hard etched edge
-    //   3) chalk fill at a substantial but sub-1.0 alpha → reads as deposited ink
-    // The result: glyphs are legible and feel etched in place rather than smearing
-    // into atmospheric haze.
-    for (let i=0;i<bins.length;i++){
-      const b = bins[i];
-      for (let j=0;j<b.glyphs.length;j++){
-        const gd = b.glyphs[j];
-        if (gd.rendered) continue;            // already permanent ink on the pile
-        if (gd.y < -20) continue;
-        const c = samplePhoto(gd.x, gd.y);
-        pctx.save();
-        pctx.translate(gd.x, gd.y);
-        pctx.rotate(gd.rot);
-        pctx.font = gd.fontStr;
-        pctx.lineJoin = 'round';
-        pctx.miterLimit = 2;
-        // Pile alpha is decoupled from the in-flight (falling) GLYPH_ALPHA so falling
-        // chalk can stay light/atmospheric while landed chalk is decisively concrete.
-        const fillA   = (gd.ghost ? PILE_FILL_ALPHA * GHOST_ALPHA_MUL : PILE_FILL_ALPHA);
-        const edgeA   = (gd.ghost ? PILE_EDGE_ALPHA * GHOST_ALPHA_MUL : PILE_EDGE_ALPHA);
-        const haloA   = (gd.ghost ? PILE_HALO_ALPHA * GHOST_ALPHA_MUL : PILE_HALO_ALPHA);
-        const baseLW  = Math.max(1.5, gd.fontSize / 7);
-        // 1) Halo: wide, low alpha — lifts the glyph off the existing pile background.
-        pctx.lineWidth = baseLW * 2.4;
-        pctx.strokeStyle = 'rgba(0,0,0,' + haloA.toFixed(3) + ')';
-        pctx.strokeText(gd.text, 0, 0);
-        // 2) Etched edge: tight, high alpha — the line that gives the character its bite.
-        pctx.lineWidth = Math.max(1.0, baseLW * 0.9);
-        pctx.strokeStyle = 'rgba(0,0,0,' + edgeA.toFixed(3) + ')';
-        pctx.strokeText(gd.text, 0, 0);
-        // 3) Chalk fill — single crisp pass; no overstrike to muddy anti-aliasing.
-        pctx.fillStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+fillA.toFixed(3)+')';
-        pctx.fillText(gd.text, 0, 0);
-        pctx.restore();
-        gd.rendered = true;                   // commit: this glyph is now permanent
+  // ---------- Render: field (ink wash + surface curve) ----------
+  function drawField(){
+    fctx.clearRect(0,0,W,H);
+    // 1) Ink wash from density grid
+    for (let j=0; j<densH; j++){
+      for (let i=0; i<densW; i++){
+        const v = dens[j*densW+i];
+        if (v < 0.02) continue;
+        const a = (v*0.42).toFixed(3);
+        fctx.fillStyle = "rgba(220,228,242," + a + ")";
+        fctx.fillRect(i*DENS_PX, j*DENS_PX, DENS_PX, DENS_PX);
       }
     }
+    // 2) Surface curve — draws the bell silhouette
+    fctx.beginPath();
+    fctx.moveTo(0, baselineY());
+    for (let i=0; i<nCols; i++){
+      fctx.lineTo(xOfCol(i), baselineY() - h[i]);
+    }
+    fctx.lineTo(W, baselineY());
+    fctx.closePath();
+    fctx.fillStyle = "rgba(228,234,246,0.06)";
+    fctx.fill();
+    fctx.strokeStyle = "rgba(232,238,248,0.22)";
+    fctx.lineWidth = 1;
+    fctx.stroke();
   }
 
-  let last = performance.now();
-  function loop(now){
-    const dt = Math.min(0.05, (now - last)/1000);
-    last = now;
-    if (now - lastSpawn >= nextSpawnIn){
-      lastSpawn = now;
-      nextSpawnIn = SPAWN_MS_MIN + Math.random()*(SPAWN_MS_MAX-SPAWN_MS_MIN);
+  // ---------- Render: marks (etched glyph ghosts) ----------
+  function drawMarks(){
+    mctx.clearRect(0,0,W,H);
+    mctx.textAlign = "center"; mctx.textBaseline = "middle";
+    for (let m=0; m<marks.length; m++){
+      const mk = marks[m];
+      const x = xOfCol(mk.i) + mk.jitterX;
+      const y = baselineY() - h[mk.i] * mk.hFrac;
+      mctx.save();
+      mctx.translate(x, y);
+      mctx.rotate(mk.rot);
+      mctx.font = FONTS[mk.k] || FONTS.code;
+      mctx.fillStyle = "rgba(232,238,248," + mk.alpha.toFixed(3) + ")";
+      mctx.fillText(mk.text, 0, 0);
+      mctx.restore();
+    }
+  }
+  // ---------- Pegs (faint) ----------
+  function drawPegs(){
+    fctx.save();
+    fctx.fillStyle = "rgba(232,238,248,0.10)";
+    for (let i=0; i<pegs.length; i++){
+      const p = pegs[i];
+      fctx.beginPath();
+      fctx.arc(p.x, p.y, 1.5, 0, Math.PI*2);
+      fctx.fill();
+    }
+    fctx.restore();
+  }
+
+  // ---------- Click burst ----------
+  addEventListener("pointerdown", (e) => {
+    const n = 6 + ((Math.random()*4)|0);
+    for (let i=0; i<n; i++){
+      const d = DICT[(Math.random()*DICT.length)|0];
+      flakes.push({
+        t: d.t, k: d.k,
+        x: e.clientX + (Math.random()-0.5)*16,
+        y: e.clientY + (Math.random()-0.5)*8,
+        vy: FALL_SPEED * (0.6 + Math.random()*0.8),
+        phase: Math.random()*Math.PI*2,
+        rot: (Math.random()-0.5)*0.4,
+        row: ROWS, born: performance.now(),
+      });
+    }
+  }, { passive: true });
+
+  // ---------- Main loop ----------
+  let lastT = performance.now();
+  function tick(){
+    const now = performance.now();
+    let dt = (now - lastT) / 1000;
+    if (dt > 0.05) dt = 0.05;
+    lastT = now;
+
+    // Spawn cadence eases up over the 10-minute arc
+    const p = progressEased();
+    const spawnMs = lerp(SPAWN_MS_EARLY, SPAWN_MS_LATE, p);
+    if (now - lastSpawn > nextSpawn){
       spawn();
+      lastSpawn = now;
+      nextSpawn = spawnMs * (0.7 + Math.random()*0.6);
     }
-    tickPhysics(dt, now);
-    tickDust(dt);
-    tickPulses(now);
-    drawFalling(now);
-    drawDust(now);
-    drawPulses(now);
-    drawPile(now);
-    requestAnimationFrame(loop);
+
+    fieldStep(dt);
+    drawFalling(dt);
+    drawField();
+    drawPegs();
+    drawMarks();
+
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(loop);
+
+  // ---------- Boot ----------
+  resize();
+  T0 = performance.now();
+  lastT = T0;
+  requestAnimationFrame(tick);
 })();
 </script>
 </body>

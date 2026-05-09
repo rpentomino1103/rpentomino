@@ -17,7 +17,7 @@
     position: fixed; inset: 0; width: 100vw; height: 100vh;
     object-fit: cover; object-position: center;
     user-select: none; -webkit-user-drag: none; pointer-events: none;
-    filter: saturate(0.85) brightness(0.85) blur(4px);
+    filter: saturate(0.95) brightness(0.92) blur(1.2px);
   }
   canvas.layer {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
@@ -30,14 +30,14 @@
   .scrim, .grain, .vignette { position: fixed; inset: 0; pointer-events: none; }
   .scrim { z-index: 9999;
     background:
-      radial-gradient(circle at 50% 28%, rgba(255,255,255,0.04), rgba(255,255,255,0) 36%),
-      linear-gradient(180deg, rgba(0,0,0,0.20), rgba(0,0,0,0.42));
+      radial-gradient(circle at 50% 28%, rgba(255,255,255,0.03), rgba(255,255,255,0) 36%),
+      linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.28));
   }
   .vignette { z-index: 10000;
     background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 42%, rgba(0,0,0,0.20) 76%, rgba(0,0,0,0.46) 100%);
+      rgba(0,0,0,0) 48%, rgba(0,0,0,0.16) 78%, rgba(0,0,0,0.40) 100%);
   }
-  .grain { z-index: 10001; opacity: 0.10; mix-blend-mode: soft-light;
+  .grain { z-index: 10001; opacity: 0.08; mix-blend-mode: soft-light;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
   }
 </style>
@@ -54,17 +54,11 @@
 <script>
 (()=>{
   // ============================================================
-  //  Galton chalkboard — realistic piling, continuous compression,
-  //  edge-fill via lateral transport, ten-minute saturation arc.
-  //  Architecture:
-  //   - falling tokens (Galton walk through a peg lattice)
-  //   - on landing, a token deposits into a column-height field h[i]
-  //     and a small ink stamp into a low-res density grid
-  //   - every frame: compression (erosion proportional to height),
-  //     lateral transport (angle-of-repose flow between neighbors),
-  //     and ghost marks ride the surface — sliding and fading with it
-  //   - target: at t about 10min the field has saturated to the cap,
-  //     edges are full from migration, marks layer into a worn surface
+  //  Galton chalkboard — the bell is built from densely packed,
+  //  overlapping text. As the run progresses (10 minutes), text
+  //  shrinks from ~13px down to ~7px and packs more tightly, so
+  //  the body of the curve becomes a wall of small writing
+  //  rather than a flat fill.
   // ============================================================
 
   // ---------- Tunables ----------
@@ -72,9 +66,9 @@
   const PEG_PITCH = 44;
   const ROW_GAP   = 50;
 
-  const RUNTIME_S      = 600;
-  const SPAWN_MS_EARLY = 110;
-  const SPAWN_MS_LATE  = 36;
+  const RUNTIME_S      = 600;            // 10-minute saturation arc
+  const SPAWN_MS_EARLY = 90;
+  const SPAWN_MS_LATE  = 22;             // late-game writes are tiny -> we can afford more
   const MAX_FALLING    = 260;
 
   const FALL_SPEED     = 56;
@@ -82,34 +76,34 @@
   const SWAY_AMP       = 6;
   const SWAY_FREQ_HZ   = 0.18;
 
-  const FONT_PX = 13;
-  const GLYPH_ALPHA = 0.16;
-  const TRAIL_FADE  = 0.30;
+  // Text-size arc: fresh tokens spawn at FONT_EARLY and shrink toward FONT_LATE
+  // over the run, with a per-mark tightening as marks settle deeper into a column.
+  const FONT_EARLY = 13;
+  const FONT_LATE  = 7;
+  const FONT_SETTLE_MIN = 0.55;          // multiplier applied to deep-buried marks
 
-  // Field: column-resolution height map driving everything
+  const GLYPH_ALPHA_FALL = 0.18;
+  const TRAIL_FADE       = 0.30;
+
+  // Field: column resolution drives compression and lateral transport
   const COL_PX           = 6;
   const FIELD_CAP_FRAC   = 0.92;
-  const FIELD_FLOOR_FRAC = 0.08;
 
-  // Compression: taller columns shrink faster
-  const EROSION_BASE = 0.0020;
+  // Compression: tall columns shrink faster -> the bell breathes
+  const EROSION_BASE = 0.0022;
   const EROSION_LATE = 0.0150;
 
-  // Lateral transport (slope-driven flow)
+  // Lateral transport
   const REPOSE_SLOPE   = 0.55;
   const FLOW_RATE_BASE = 0.06;
   const FLOW_RATE_LATE = 0.22;
 
-  // Density grid
-  const DENS_PX      = 8;
-  const DENS_DEPOSIT = 0.28;
-  const DENS_DECAY   = 0.0006;
-  const DENS_BLOOM   = 6;
-
-  // Marks
-  const MAX_MARKS_BASE  = 1400;
-  const MAX_MARKS_LATE  = 4200;
-  const MARK_FADE_FLOOR = 0.15;
+  // Marks (the *only* thing that draws the bell body)
+  const MAX_MARKS_BASE   = 1800;
+  const MAX_MARKS_LATE   = 6500;
+  const MARK_FADE_FLOOR  = 0.18;
+  const MARK_ALPHA_FRESH = 0.92;
+  const MARK_ALPHA_DECAY = 0.010;        // per second toward the floor
 
   // Galton
   const STEP_P         = 0.5;
@@ -156,13 +150,10 @@
   }
 
   // ---------- Field state ----------
-  let nCols=0, h=null, dens=null, densW=0, densH=0;
+  let nCols=0, h=null;
   function rebuildField(){
     nCols = Math.max(8, Math.ceil(W/COL_PX));
     h = new Float32Array(nCols);
-    densW = Math.ceil(W/DENS_PX);
-    densH = Math.ceil(H/DENS_PX);
-    dens = new Float32Array(densW*densH);
   }
   const baselineY = () => H - 8;
   const colOfX = (x) => Math.max(0, Math.min(nCols-1, (x/COL_PX)|0));
@@ -185,6 +176,8 @@
     {t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math"},
     {t: "cos x = Σ (−1)^n x^{2n}/(2n)!",     k: "math"},
     {t: "1729 = 1³+12³ = 9³+10³",  k: "math"},
+    {t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math"},
+    {t: "x² − Dy² = 1   [Pell]",  k: "math"},
     {t: "central limit theorem",   k: "human"},
     {t: "binomial → gaussian",     k: "human"},
     {t: "angle of repose",         k: "human"},
@@ -192,6 +185,8 @@
     {t: "chalk dust",              k: "human"},
     {t: "erase, then return",      k: "human"},
     {t: "a board worn by use",     k: "human"},
+    {t: "regression to the mean",  k: "human"},
+    {t: "law of large numbers",    k: "human"},
     {t: "main character energy ✨", k: "ghost"},
     {t: "the math is mathing 📐",  k: "ghost"},
     {t: "bestie wym 💀",           k: "ghost"},
@@ -200,20 +195,26 @@
     {t: "low key obsessed 😵",     k: "ghost"},
     {t: "vibe check passed 🌷",    k: "ghost"},
     {t: "we love a chaotic queen 🦄", k: "ghost"},
+    {t: "delulu but make it fashion 👛", k: "ghost"},
+    {t: "the giggle is sending me 🤭", k: "ghost"},
   ];
-  const FONTS = {
-    math:  "italic " + (FONT_PX+2) + "px Cambria Math, STIX Two Math, Georgia, serif",
-    human: "italic " + (FONT_PX+1) + "px Iowan Old Style, Palatino, Georgia, serif",
-    ghost: FONT_PX + "px ui-monospace, Menlo, Consolas, monospace",
-    code:  FONT_PX + "px ui-monospace, Menlo, Consolas, monospace",
-  };
+  function fontFor(k, px){
+    if (k === "math")  return "italic " + px.toFixed(2) + "px Cambria Math, STIX Two Math, Georgia, serif";
+    if (k === "human") return "italic " + px.toFixed(2) + "px Iowan Old Style, Palatino, Georgia, serif";
+    return px.toFixed(2) + "px ui-monospace, Menlo, Consolas, monospace";
+  }
   // ---------- Falling tokens ----------
   const flakes = [];
   let lastSpawn = 0, nextSpawn = SPAWN_MS_EARLY;
 
+  function currentFontPx(){
+    return lerp(FONT_EARLY, FONT_LATE, progressEased());
+  }
+
   function spawn(){
     if (flakes.length >= MAX_FALLING) return;
     const d = DICT[(Math.random()*DICT.length)|0];
+    const px = currentFontPx() * (0.92 + Math.random()*0.18);
     flakes.push({
       t: d.t, k: d.k,
       x: spoutX + (Math.random()-0.5)*8,
@@ -221,6 +222,7 @@
       vy: FALL_SPEED * (1 + (Math.random()-0.5)*FALL_SPEED_VAR),
       phase: Math.random()*Math.PI*2,
       rot: (Math.random()-0.5)*0.2,
+      px: px,
       row: 0, born: performance.now(),
     });
   }
@@ -249,33 +251,24 @@
     o.start(); o.stop(actx.currentTime+0.12);
   }
   addEventListener("pointerdown", ()=>{ ensureAudio(); }, {once:true, passive:true});
-  // ---------- Marks ----------
+  // ---------- Marks (the body of the bell) ----------
+  // A mark is anchored to (column i, hFrac in [0..1]) where 1 = top of column.
+  // As the column shrinks (compression) or shifts (lateral flow), the mark
+  // rides the surface. Marks store their own font px so deeper layers stay
+  // big-from-when-they-were-fresh while new arrivals are smaller.
   const marks = [];
-  function pushMark(i, text, k, alpha){
+  function pushMark(i, text, k, px){
     const cap = lerp(MAX_MARKS_BASE, MAX_MARKS_LATE, progressEased());
     while (marks.length > cap) marks.shift();
     marks.push({
-      i: i, hFrac: 0.98,
+      i: i, hFrac: 0.985,
       text: text, k: k,
-      rot: (Math.random()-0.5)*0.45,
-      alpha: alpha, age: 0,
-      jitterX: (Math.random()-0.5)*COL_PX*1.6,
+      rot: (Math.random()-0.5)*0.55,
+      alpha: MARK_ALPHA_FRESH, age: 0,
+      px: px,
+      jx: (Math.random()-0.5)*COL_PX*1.6,
+      jy: (Math.random()-0.5)*1.5,
     });
-  }
-
-  // ---------- Density grid ----------
-  function depositDens(px, py, amt){
-    const ci = (px/DENS_PX)|0, cj = (py/DENS_PX)|0;
-    for (let dj=-DENS_BLOOM; dj<=DENS_BLOOM; dj++){
-      for (let di=-DENS_BLOOM; di<=DENS_BLOOM; di++){
-        const i = ci+di, j = cj+dj;
-        if (i<0||i>=densW||j<0||j>=densH) continue;
-        const r2 = di*di+dj*dj;
-        const w = Math.exp(-r2/(DENS_BLOOM*0.7));
-        const k2 = j*densW+i;
-        dens[k2] = Math.min(1, dens[k2] + amt*w);
-      }
-    }
   }
 
   // ---------- Helpers ----------
@@ -291,8 +284,7 @@
     const flow    = lerp(FLOW_RATE_BASE, FLOW_RATE_LATE, p);
     const cap     = H*FIELD_CAP_FRAC;
 
-    // 1) Compression: each column shrinks proportional to its own height.
-    //    Tall middle columns sink fastest, so the bell stays bell-shaped.
+    // 1) Compression
     for (let i=0; i<nCols; i++){
       if (h[i] > 0) {
         h[i] -= h[i] * erosion * dt;
@@ -300,7 +292,7 @@
       }
     }
 
-    // 2) Lateral transport: slope-limited flow between neighbors.
+    // 2) Lateral transport
     for (let pass=0; pass<2; pass++){
       const dir = pass===0 ? 1 : -1;
       const start = dir>0 ? 0 : nCols-2;
@@ -318,38 +310,40 @@
       }
     }
 
-    // 3) Cap and density decay
+    // 3) Cap
     for (let i=0; i<nCols; i++) if (h[i] > cap) h[i] = cap;
-    if (p > 0.05){
-      const decay = DENS_DECAY * (1 + p*2);
-      for (let k=0; k<dens.length; k++) if (dens[k]>0) dens[k] = Math.max(0, dens[k]-decay);
-    }
 
-    // 4) Marks ride the surface and slide off the shoulders.
+    // 4) Marks ride the surface and slide off shoulders.
+    //    They also gradually shrink toward the current global font px,
+    //    representing the chalk getting compressed/rewritten over.
+    const targetPx = currentFontPx();
     for (let m=0; m<marks.length; m++){
       const mk = marks[m];
       mk.age += dt;
-      mk.alpha = Math.max(MARK_FADE_FLOOR, mk.alpha - 0.012*dt);
+      mk.alpha = Math.max(MARK_FADE_FLOOR, mk.alpha - MARK_ALPHA_DECAY*dt);
+      // gentle shrink toward target px so the bell becomes visually denser
+      mk.px += (Math.min(mk.px, targetPx*1.05) - mk.px) * Math.min(1, 0.04*dt);
+      // top-of-column marks slide downhill toward shorter neighbors
       if (mk.hFrac > 0.55){
         const i = mk.i;
         const here = h[i];
         const left  = i>0       ? h[i-1] : Infinity;
         const right = i<nCols-1 ? h[i+1] : Infinity;
-        // slide toward the lower neighbor when the slope is steep enough
-        if (left  < here - COL_PX*REPOSE_SLOPE && Math.random()<0.35) mk.i = Math.max(0, mk.i - 1);
-        else if (right < here - COL_PX*REPOSE_SLOPE && Math.random()<0.35) mk.i = Math.min(nCols-1, mk.i + 1);
+        if (left  < here - COL_PX*REPOSE_SLOPE && Math.random()<0.30) mk.i = Math.max(0, mk.i - 1);
+        else if (right < here - COL_PX*REPOSE_SLOPE && Math.random()<0.30) mk.i = Math.min(nCols-1, mk.i + 1);
       }
+      // marks deeper in the column also drift down a touch in hFrac as compression pushes them
+      mk.hFrac -= 0.0008 * dt * (1 - mk.hFrac*0.5);
+      if (mk.hFrac < 0.02) mk.hFrac = 0.02;
     }
   }
-  // ---------- Landing: token -> field deposit ----------
+  // ---------- Landing: token -> column height + new mark ----------
   function land(g){
     const i = colOfX(g.x);
-    const STEP = FONT_PX*0.95;
+    const STEP = g.px * 0.85;
     const cap = H*FIELD_CAP_FRAC;
     h[i] = Math.min(cap, h[i] + STEP);
-    const surfY = baselineY() - h[i];
-    depositDens(g.x, surfY, DENS_DEPOSIT);
-    pushMark(i, g.t, g.k, 0.95);
+    pushMark(i, g.t, g.k, g.px);
   }
 
   // ---------- Render: falling layer ----------
@@ -371,71 +365,41 @@
 
       const ci = colOfX(g.x);
       const surf = baselineY() - h[ci];
-      if (g.y >= surf - 2 && g.row >= ROWS){
+      if (g.y >= surf - 1 && g.row >= ROWS){
         land(g);
         flakes.splice(i,1);
         continue;
       }
 
-      const a = Math.min(1, (now - g.born)/700) * GLYPH_ALPHA * (g.k==="ghost"?0.85:1);
+      const a = Math.min(1, (now - g.born)/700) * GLYPH_ALPHA_FALL * (g.k==="ghost"?0.85:1);
       tctx.save();
       tctx.translate(g.x, g.y);
       tctx.rotate(g.rot);
-      tctx.font = FONTS[g.k] || FONTS.code;
+      tctx.font = fontFor(g.k, g.px);
       tctx.fillStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
       tctx.textAlign = "center"; tctx.textBaseline = "middle";
       tctx.fillText(g.t, 0, 0);
       tctx.restore();
     }
   }
-  // ---------- Render: field (ink wash + surface curve) ----------
+  // ---------- Render: faint contour + pegs ----------
   function drawField(){
     fctx.clearRect(0,0,W,H);
-    // 1) Ink wash from density grid
-    for (let j=0; j<densH; j++){
-      for (let i=0; i<densW; i++){
-        const v = dens[j*densW+i];
-        if (v < 0.02) continue;
-        const a = (v*0.42).toFixed(3);
-        fctx.fillStyle = "rgba(220,228,242," + a + ")";
-        fctx.fillRect(i*DENS_PX, j*DENS_PX, DENS_PX, DENS_PX);
-      }
-    }
-    // 2) Surface curve — draws the bell silhouette
+    // a single thin chalk line traces the surface as a guide
     fctx.beginPath();
-    fctx.moveTo(0, baselineY());
+    let started = false;
     for (let i=0; i<nCols; i++){
-      fctx.lineTo(xOfCol(i), baselineY() - h[i]);
+      if (h[i] <= 0) { started = false; continue; }
+      const x = xOfCol(i);
+      const y = baselineY() - h[i];
+      if (!started) { fctx.moveTo(x, y); started = true; }
+      else fctx.lineTo(x, y);
     }
-    fctx.lineTo(W, baselineY());
-    fctx.closePath();
-    fctx.fillStyle = "rgba(228,234,246,0.06)";
-    fctx.fill();
-    fctx.strokeStyle = "rgba(232,238,248,0.22)";
+    fctx.strokeStyle = "rgba(232,238,248,0.10)";
     fctx.lineWidth = 1;
     fctx.stroke();
-  }
 
-  // ---------- Render: marks (etched glyph ghosts) ----------
-  function drawMarks(){
-    mctx.clearRect(0,0,W,H);
-    mctx.textAlign = "center"; mctx.textBaseline = "middle";
-    for (let m=0; m<marks.length; m++){
-      const mk = marks[m];
-      const x = xOfCol(mk.i) + mk.jitterX;
-      const y = baselineY() - h[mk.i] * mk.hFrac;
-      mctx.save();
-      mctx.translate(x, y);
-      mctx.rotate(mk.rot);
-      mctx.font = FONTS[mk.k] || FONTS.code;
-      mctx.fillStyle = "rgba(232,238,248," + mk.alpha.toFixed(3) + ")";
-      mctx.fillText(mk.text, 0, 0);
-      mctx.restore();
-    }
-  }
-  // ---------- Pegs (faint) ----------
-  function drawPegs(){
-    fctx.save();
+    // pegs
     fctx.fillStyle = "rgba(232,238,248,0.10)";
     for (let i=0; i<pegs.length; i++){
       const p = pegs[i];
@@ -443,14 +407,38 @@
       fctx.arc(p.x, p.y, 1.5, 0, Math.PI*2);
       fctx.fill();
     }
-    fctx.restore();
   }
 
+  // ---------- Render: marks ----------
+  // The bell is *literally* drawn here, as overlapping text glyphs.
+  function drawMarks(){
+    mctx.clearRect(0,0,W,H);
+    mctx.textAlign = "center"; mctx.textBaseline = "middle";
+    for (let m=0; m<marks.length; m++){
+      const mk = marks[m];
+      const colH = h[mk.i];
+      if (colH <= 0) continue;
+      const x = xOfCol(mk.i) + mk.jx;
+      const y = baselineY() - colH * mk.hFrac + mk.jy;
+      // deeper marks (low hFrac) read smaller and slightly fainter — the body compacts
+      const depthShrink = lerp(FONT_SETTLE_MIN, 1.0, mk.hFrac);
+      const px = Math.max(6, mk.px * depthShrink);
+      const a  = mk.alpha * (0.55 + 0.45*mk.hFrac);
+      mctx.save();
+      mctx.translate(x, y);
+      mctx.rotate(mk.rot);
+      mctx.font = fontFor(mk.k, px);
+      mctx.fillStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
+      mctx.fillText(mk.text, 0, 0);
+      mctx.restore();
+    }
+  }
   // ---------- Click burst ----------
   addEventListener("pointerdown", (e) => {
     const n = 6 + ((Math.random()*4)|0);
     for (let i=0; i<n; i++){
       const d = DICT[(Math.random()*DICT.length)|0];
+      const px = currentFontPx() * (0.92 + Math.random()*0.18);
       flakes.push({
         t: d.t, k: d.k,
         x: e.clientX + (Math.random()-0.5)*16,
@@ -458,6 +446,7 @@
         vy: FALL_SPEED * (0.6 + Math.random()*0.8),
         phase: Math.random()*Math.PI*2,
         rot: (Math.random()-0.5)*0.4,
+        px: px,
         row: ROWS, born: performance.now(),
       });
     }
@@ -471,7 +460,6 @@
     if (dt > 0.05) dt = 0.05;
     lastT = now;
 
-    // Spawn cadence eases up over the 10-minute arc
     const p = progressEased();
     const spawnMs = lerp(SPAWN_MS_EARLY, SPAWN_MS_LATE, p);
     if (now - lastSpawn > nextSpawn){
@@ -483,7 +471,6 @@
     fieldStep(dt);
     drawFalling(dt);
     drawField();
-    drawPegs();
     drawMarks();
 
     requestAnimationFrame(tick);

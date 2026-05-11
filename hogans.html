@@ -17,7 +17,7 @@
     position: fixed; inset: 0; width: 100vw; height: 100vh;
     object-fit: cover; object-position: center;
     user-select: none; -webkit-user-drag: none; pointer-events: none;
-    filter: saturate(0.95) brightness(0.92) blur(1.2px);
+    filter: saturate(0.95) brightness(0.92);
   }
   canvas.layer {
     position: fixed; inset: 0; width: 100vw; height: 100vh;
@@ -79,8 +79,8 @@
   // Text-size arc: fresh tokens spawn at FONT_EARLY and shrink toward FONT_LATE
   // over the run, with a per-mark tightening as marks settle deeper into a column.
   const FONT_EARLY = 13;
-  const FONT_LATE  = 7;
-  const FONT_SETTLE_MIN = 0.55;          // multiplier applied to deep-buried marks
+  const FONT_LATE  = 6;
+  const FONT_SETTLE_MIN = 0.45;          // multiplier applied to deep-buried marks
 
   const GLYPH_ALPHA_FALL = 0.18;
   const TRAIL_FADE       = 0.30;
@@ -100,7 +100,7 @@
 
   // Marks (the *only* thing that draws the bell body)
   const MAX_MARKS_BASE   = 1800;
-  const MAX_MARKS_LATE   = 6500;
+  const MAX_MARKS_LATE   = 11000;
   const MARK_FADE_FLOOR  = 0.18;
   const MARK_ALPHA_FRESH = 0.92;
   const MARK_ALPHA_DECAY = 0.010;        // per second toward the floor

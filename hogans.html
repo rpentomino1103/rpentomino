@@ -5,481 +5,680 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>hogans</title>
 <meta name="description" content="" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect width=%2216%22 height=%2216%22 fill=%22%23000%22/></svg>" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23040807'/%3E%3Cpath d='M3 11.5C5.2 8.9 8 7.6 13 8.4' fill='none' stroke='%23eaf2ee' stroke-width='1.1'/%3E%3C/svg%3E" />
 <style>
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: #0b0d10; overflow: hidden;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #070a09;
     color: #e8eef8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+
   .bg {
-    position: fixed; inset: 0; width: 100vw; height: 100vh;
-    object-fit: cover; object-position: center;
-    user-select: none; -webkit-user-drag: none; pointer-events: none;
-    filter: saturate(0.95) brightness(0.92);
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    object-position: center;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+    filter: saturate(0.88) contrast(1.08) brightness(0.82);
+    opacity: 0.92;
   }
+
   canvas.layer {
-    position: fixed; inset: 0; width: 100vw; height: 100vh;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
     pointer-events: none;
   }
-  canvas#field { z-index: 9996; mix-blend-mode: screen; }
-  canvas#fall  { z-index: 9997; mix-blend-mode: screen; }
-  canvas#marks { z-index: 9998; mix-blend-mode: screen; }
-  h1 { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-  .scrim, .grain, .vignette { position: fixed; inset: 0; pointer-events: none; }
-  .scrim { z-index: 9999;
+
+  #field { z-index: 3; mix-blend-mode: screen; }
+  #marks { z-index: 4; mix-blend-mode: screen; }
+  #fall  { z-index: 5; mix-blend-mode: screen; }
+
+  h1 {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .scrim,
+  .grain,
+  .vignette,
+  .warmth {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .scrim {
+    z-index: 1;
     background:
-      radial-gradient(circle at 50% 28%, rgba(255,255,255,0.03), rgba(255,255,255,0) 36%),
-      linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.28));
+      radial-gradient(circle at 50% 19%, rgba(255,255,255,0.035), rgba(255,255,255,0) 30%),
+      linear-gradient(180deg, rgba(3,7,8,0.03) 0%, rgba(3,7,8,0.08) 41%, rgba(3,7,8,0.30) 100%);
   }
-  .vignette { z-index: 10000;
+
+  .warmth {
+    z-index: 2;
+    opacity: 0.42;
+    mix-blend-mode: soft-light;
+    background:
+      radial-gradient(circle at 24% 68%, rgba(255,195,118,0.28), transparent 31%),
+      radial-gradient(circle at 70% 38%, rgba(133,202,215,0.18), transparent 34%);
+  }
+
+  .vignette {
+    z-index: 8;
     background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 48%, rgba(0,0,0,0.16) 78%, rgba(0,0,0,0.40) 100%);
+      rgba(0,0,0,0) 42%,
+      rgba(0,0,0,0.18) 74%,
+      rgba(0,0,0,0.46) 100%);
   }
-  .grain { z-index: 10001; opacity: 0.08; mix-blend-mode: soft-light;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
+
+  .grain {
+    z-index: 9;
+    opacity: 0.075;
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.84' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
+  }
+
+  .plate {
+    position: fixed;
+    right: max(18px, env(safe-area-inset-right));
+    bottom: max(15px, env(safe-area-inset-bottom));
+    z-index: 10;
+    display: grid;
+    gap: 2px;
+    color: rgba(238, 245, 242, 0.55);
+    text-align: right;
+    text-shadow: 0 0 18px rgba(238, 245, 242, 0.2);
+    pointer-events: none;
+  }
+
+  .plate strong {
+    font: 700 0.68rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .plate span {
+    font: 0.62rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    opacity: 0.76;
+  }
+
+  @media (max-width: 720px) {
+    .bg {
+      filter: saturate(0.9) contrast(1.05) brightness(0.74);
+    }
+
+    .plate {
+      display: none;
+    }
   }
 </style>
 </head>
 <body>
 <h1>hogans</h1>
-<img class="bg" id="bgimg" src="/photos/hogans.jpg" alt="" crossorigin="anonymous" />
+<img
+  class="bg"
+  id="bgimg"
+  src="/photos/hogans.jpg"
+  alt=""
+  crossorigin="anonymous"
+  data-fallback-a="photos/hogans.jpg"
+  data-fallback-b="https://raw.githubusercontent.com/rpentomino1103/rpentomino/main/photos/hogans.jpg"
+/>
 <canvas id="field" class="layer"></canvas>
-<canvas id="fall"  class="layer"></canvas>
 <canvas id="marks" class="layer"></canvas>
+<canvas id="fall" class="layer"></canvas>
 <div class="scrim" aria-hidden="true"></div>
+<div class="warmth" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
+<div class="plate" aria-hidden="true">
+  <strong>p = 0.5</strong>
+  <span id="counter">0 trials</span>
+</div>
+
 <script>
-(()=>{
-  // ============================================================
-  //  Galton chalkboard — the bell is built from densely packed,
-  //  overlapping text. As the run progresses (10 minutes), text
-  //  shrinks from ~13px down to ~7px and packs more tightly, so
-  //  the body of the curve becomes a wall of small writing
-  //  rather than a flat fill.
-  // ============================================================
+(() => {
+  // Galton Alley: formulas and text-message fragments drift over the photo.
+  // The settled distribution is drawn only from layered chalk text.
 
-  // ---------- Tunables ----------
-  const ROWS = 11;
-  const PEG_PITCH = 44;
-  const ROW_GAP   = 50;
+  const ROWS_DESKTOP = 12;
+  const ROWS_MOBILE = 10;
+  const SPAWN_MS = 165;
+  const MAX_FALLING = 82;
+  const MAX_MARKS = 9000;
+  const MAX_DUST = 1800;
 
-  const RUNTIME_S      = 600;            // 10-minute saturation arc
-  const SPAWN_MS_EARLY = 90;
-  const SPAWN_MS_LATE  = 22;             // late-game writes are tiny -> we can afford more
-  const MAX_FALLING    = 260;
+  const bg = document.getElementById("bgimg");
+  const fallC = document.getElementById("fall");
+  const marksC = document.getElementById("marks");
+  const fieldC = document.getElementById("field");
+  const counter = document.getElementById("counter");
+  const tctx = fallC.getContext("2d");
+  const mctx = marksC.getContext("2d");
+  const fctx = fieldC.getContext("2d");
+  const staticC = document.createElement("canvas");
+  const sctx = staticC.getContext("2d");
 
-  const FALL_SPEED     = 56;
-  const FALL_SPEED_VAR = 0.30;
-  const SWAY_AMP       = 6;
-  const SWAY_FREQ_HZ   = 0.18;
-
-  // Text-size arc: fresh tokens spawn at FONT_EARLY and shrink toward FONT_LATE
-  // over the run, with a per-mark tightening as marks settle deeper into a column.
-  const FONT_EARLY = 13;
-  const FONT_LATE  = 6;
-  const FONT_SETTLE_MIN = 0.45;          // multiplier applied to deep-buried marks
-
-  const GLYPH_ALPHA_FALL = 0.18;
-  const TRAIL_FADE       = 0.30;
-
-  // Field: column resolution drives compression and lateral transport
-  const COL_PX           = 6;
-  const FIELD_CAP_FRAC   = 0.92;
-
-  // Compression: tall columns shrink faster -> the bell breathes
-  const EROSION_BASE = 0.0022;
-  const EROSION_LATE = 0.0150;
-
-  // Lateral transport
-  const REPOSE_SLOPE   = 0.55;
-  const FLOW_RATE_BASE = 0.06;
-  const FLOW_RATE_LATE = 0.22;
-
-  // Marks (the *only* thing that draws the bell body)
-  const MAX_MARKS_BASE   = 1800;
-  const MAX_MARKS_LATE   = 11000;
-  const MARK_FADE_FLOOR  = 0.18;
-  const MARK_ALPHA_FRESH = 0.92;
-  const MARK_ALPHA_DECAY = 0.010;        // per second toward the floor
-
-  // Galton
-  const STEP_P         = 0.5;
-  const PLINK_VOL      = 0.018;
-  const PLINK_COOLDOWN = 110;
-
-  // ---------- Canvas / DPI ----------
-  const fieldC = document.getElementById('field');
-  const fallC  = document.getElementById('fall');
-  const marksC = document.getElementById('marks');
-  const fctx = fieldC.getContext('2d');
-  const tctx = fallC.getContext('2d');
-  const mctx = marksC.getContext('2d');
-
-  let W=0, H=0, DPR=1;
-  function resize(){
-    DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
-    W = innerWidth; H = innerHeight;
-    for (const c of [fieldC, fallC, marksC]){
-      c.width = W*DPR; c.height = H*DPR;
-      c.style.width = W+'px'; c.style.height = H+'px';
-      c.getContext('2d').setTransform(DPR,0,0,DPR,0,0);
-    }
-    rebuildBoard();
-    rebuildField();
-  }
-  addEventListener('resize', resize);
-
-  // ---------- Galton lattice ----------
-  let pegs=[], rowY=[], lastRowY=0, spoutX=0;
-  function rebuildBoard(){
-    pegs.length=0; rowY.length=0;
-    const cy0 = Math.max(80, H*0.10);
-    spoutX = W*0.5;
-    for (let r=0; r<ROWS; r++){
-      const y = cy0 + r*ROW_GAP;
-      rowY.push(y);
-      const cols = r+2;
-      const totalW = (cols-1)*PEG_PITCH;
-      const x0 = spoutX - totalW*0.5;
-      for (let c=0; c<cols; c++) pegs.push({x: x0 + c*PEG_PITCH, y});
-    }
-    lastRowY = rowY[rowY.length-1] + ROW_GAP*0.6;
-  }
-
-  // ---------- Field state ----------
-  let nCols=0, h=null;
-  function rebuildField(){
-    nCols = Math.max(8, Math.ceil(W/COL_PX));
-    h = new Float32Array(nCols);
-  }
-  const baselineY = () => H - 8;
-  const colOfX = (x) => Math.max(0, Math.min(nCols-1, (x/COL_PX)|0));
-  const xOfCol = (i) => (i+0.5)*COL_PX;
-
-  // ---------- Glyph dictionary ----------
-  const DICT = [
-    {t: "P(A and B) = P(A)P(B|A)", k: "math"},
-    {t: "lim (1+1/n)^n = e",       k: "math"},
-    {t: "Σ 1/n² = π²/6",           k: "math"},
-    {t: "Σ 1/n⁴ = π⁴/90",          k: "math"},
-    {t: "ζ(s) = Σ 1/n^s",          k: "math"},
-    {t: "ζ(s) = ∏ 1/(1 − p^{-s})", k: "math"},
-    {t: "γ = lim (Σ 1/k − ln n)",  k: "math"},
-    {t: "π(n) ~ n / ln n",         k: "math"},
-    {t: "Σ μ(d) = [n=1]",          k: "math"},
-    {t: "Σ_{d|n} φ(d) = n",        k: "math"},
-    {t: "(p−1)! ≡ −1 (mod p)",     k: "math"},
-    {t: "e^x = Σ x^n / n!",        k: "math"},
-    {t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math"},
-    {t: "cos x = Σ (−1)^n x^{2n}/(2n)!",     k: "math"},
-    {t: "1729 = 1³+12³ = 9³+10³",  k: "math"},
-    {t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math"},
-    {t: "x² − Dy² = 1   [Pell]",  k: "math"},
-    {t: "central limit theorem",   k: "human"},
-    {t: "binomial → gaussian",     k: "human"},
-    {t: "angle of repose",         k: "human"},
-    {t: "mean reverts; tails persist", k: "human"},
-    {t: "chalk dust",              k: "human"},
-    {t: "erase, then return",      k: "human"},
-    {t: "a board worn by use",     k: "human"},
-    {t: "regression to the mean",  k: "human"},
-    {t: "law of large numbers",    k: "human"},
-    {t: "main character energy ✨", k: "ghost"},
-    {t: "the math is mathing 📐",  k: "ghost"},
-    {t: "bestie wym 💀",           k: "ghost"},
-    {t: "no thoughts head empty 🫧", k: "ghost"},
-    {t: "core memory unlocked 🎐", k: "ghost"},
-    {t: "low key obsessed 😵",     k: "ghost"},
-    {t: "vibe check passed 🌷",    k: "ghost"},
-    {t: "we love a chaotic queen 🦄", k: "ghost"},
-    {t: "delulu but make it fashion 👛", k: "ghost"},
-    {t: "the giggle is sending me 🤭", k: "ghost"},
+  const imageSources = [
+    bg.getAttribute("src"),
+    bg.dataset.fallbackA,
+    bg.dataset.fallbackB
   ];
-  function fontFor(k, px){
-    if (k === "math")  return "italic " + px.toFixed(2) + "px Cambria Math, STIX Two Math, Georgia, serif";
-    if (k === "human") return "italic " + px.toFixed(2) + "px Iowan Old Style, Palatino, Georgia, serif";
-    return px.toFixed(2) + "px ui-monospace, Menlo, Consolas, monospace";
-  }
-  // ---------- Falling tokens ----------
-  const flakes = [];
-  let lastSpawn = 0, nextSpawn = SPAWN_MS_EARLY;
+  let imageSourceIndex = 0;
+  bg.addEventListener("error", () => {
+    imageSourceIndex += 1;
+    if (imageSourceIndex < imageSources.length) {
+      bg.src = imageSources[imageSourceIndex];
+    } else {
+      bg.style.opacity = "0.14";
+    }
+  });
 
-  function currentFontPx(){
-    return lerp(FONT_EARLY, FONT_LATE, progressEased());
+  const DICT = [
+    { t: "P(A and B) = P(A)P(B|A)", k: "math" },
+    { t: "lim (1+1/n)^n = e", k: "math" },
+    { t: "Σ 1/n² = π²/6", k: "math" },
+    { t: "Σ 1/n⁴ = π⁴/90", k: "math" },
+    { t: "ζ(s) = Σ 1/n^s", k: "math" },
+    { t: "ζ(s) = ∏ 1/(1 − p^{-s})", k: "math" },
+    { t: "γ = lim (Σ 1/k − ln n)", k: "math" },
+    { t: "π(n) ~ n / ln n", k: "math" },
+    { t: "Σ μ(d) = [n=1]", k: "math" },
+    { t: "Σ_{d|n} φ(d) = n", k: "math" },
+    { t: "(p−1)! ≡ −1 (mod p)", k: "math" },
+    { t: "e^x = Σ x^n / n!", k: "math" },
+    { t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math" },
+    { t: "cos x = Σ (−1)^n x^{2n}/(2n)!", k: "math" },
+    { t: "1729 = 1³+12³ = 9³+10³", k: "math" },
+    { t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math" },
+    { t: "x² − Dy² = 1   [Pell]", k: "math" },
+    { t: "central limit theorem", k: "human" },
+    { t: "binomial → gaussian", k: "human" },
+    { t: "angle of repose", k: "human" },
+    { t: "mean reverts; tails persist", k: "human" },
+    { t: "chalk dust", k: "human" },
+    { t: "erase, then return", k: "human" },
+    { t: "a board worn by use", k: "human" },
+    { t: "regression to the mean", k: "human" },
+    { t: "law of large numbers", k: "human" },
+    { t: "main character energy ✨", k: "ghost" },
+    { t: "the math is mathing 📐", k: "ghost" },
+    { t: "bestie wym 💀", k: "ghost" },
+    { t: "no thoughts head empty 🫧", k: "ghost" },
+    { t: "core memory unlocked 🎐", k: "ghost" },
+    { t: "low key obsessed 😵", k: "ghost" },
+    { t: "vibe check passed 🌷", k: "ghost" },
+    { t: "delulu but make it fashion 👛", k: "ghost" },
+    { t: "the giggle is sending me 🤭", k: "ghost" }
+  ];
+
+  let W = 0;
+  let H = 0;
+  let DPR = 1;
+  let board = null;
+  let lastT = performance.now();
+  let lastSpawn = 0;
+  let rows = ROWS_DESKTOP;
+  let counts = [];
+  let flakes = [];
+  let marks = [];
+  let dust = [];
+  let trials = 0;
+  let actx = null;
+  let lastPlink = 0;
+
+  function random(min, max) {
+    return min + Math.random() * (max - min);
   }
 
-  function spawn(){
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function fontFor(k, px) {
+    if (k === "math") {
+      return "italic " + px.toFixed(2) + "px Cambria Math, STIX Two Math, Georgia, serif";
+    }
+    if (k === "human") {
+      return "italic " + px.toFixed(2) + "px Iowan Old Style, Palatino, Georgia, serif";
+    }
+    return px.toFixed(2) + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  }
+
+  function colorFor(k, alpha) {
+    if (k === "math") return "rgba(242,245,235," + alpha.toFixed(3) + ")";
+    if (k === "human") return "rgba(215,246,225," + alpha.toFixed(3) + ")";
+    return "rgba(203,230,255," + alpha.toFixed(3) + ")";
+  }
+
+  function currentFontPx() {
+    return 8.8;
+  }
+
+  function resize() {
+    DPR = clamp(window.devicePixelRatio || 1, 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+
+    for (const [canvas, ctx] of [[fallC, tctx], [marksC, mctx], [fieldC, fctx]]) {
+      canvas.width = Math.round(W * DPR);
+      canvas.height = Math.round(H * DPR);
+      canvas.style.width = W + "px";
+      canvas.style.height = H + "px";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+
+    staticC.width = Math.round(W * DPR);
+    staticC.height = Math.round(H * DPR);
+    sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    rebuildBoard();
+    drawStaticBoard();
+  }
+
+  function rebuildBoard() {
+    rows = W < 700 ? ROWS_MOBILE : ROWS_DESKTOP;
+    const binCount = rows + 1;
+    const topY = Math.max(72, H * 0.105);
+    const baseline = H - (W < 700 ? 32 : 22);
+    const availableH = Math.max(360, baseline - topY);
+    const rowGap = clamp(availableH / (rows + 4.1), 31, 48);
+    const maxWidth = W < 700 ? W * 0.92 : Math.min(W * 0.76, 860);
+    const pitch = clamp(maxWidth / (rows + 1.6), W < 700 ? 27 : 34, W < 700 ? 43 : 57);
+    const centerX = W * 0.5;
+    const lastRowY = topY + (rows - 1) * rowGap;
+    const binTop = Math.min(baseline - 78, lastRowY + rowGap * 0.92);
+    const binWidth = pitch;
+    const binLeft = centerX - binCount * binWidth * 0.5;
+    const maxPile = Math.max(96, baseline - binTop - 16);
+    const rowY = [];
+    const pegs = [];
+
+    for (let r = 0; r < rows; r += 1) {
+      const y = topY + r * rowGap;
+      rowY.push(y);
+      for (let c = 0; c <= r; c += 1) {
+        pegs.push({
+          x: centerX + (c - r / 2) * pitch,
+          y,
+          r,
+          c
+        });
+      }
+    }
+
+    board = {
+      rows,
+      binCount,
+      centerX,
+      topY,
+      baseline,
+      rowGap,
+      pitch,
+      rowY,
+      pegs,
+      binTop,
+      binWidth,
+      binLeft,
+      binRight: binLeft + binCount * binWidth,
+      maxPile
+    };
+
+    counts = new Array(binCount).fill(0);
+    marks = [];
+    flakes = [];
+    dust = [];
+    trials = 0;
+    counter.textContent = "0 trials";
+  }
+
+  function chalkLine(ctx, x1, y1, x2, y2, alpha, width, passes) {
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let i = 0; i < passes; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(x1 + random(-0.6, 0.6), y1 + random(-0.6, 0.6));
+      ctx.lineTo(x2 + random(-0.6, 0.6), y2 + random(-0.6, 0.6));
+      ctx.strokeStyle = "rgba(235,244,240," + (alpha * random(0.55, 1.12)).toFixed(3) + ")";
+      ctx.lineWidth = width * random(0.62, 1.34);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function chalkDot(ctx, x, y, r, alpha) {
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.fillStyle = "rgba(232,242,238," + (alpha * 0.20).toFixed(3) + ")";
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.arc(x + random(-0.45, 0.45), y + random(-0.45, 0.45), r * random(0.78, 1.18), 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(235,244,240," + (alpha * random(0.55, 1)).toFixed(3) + ")";
+      ctx.lineWidth = random(0.65, 1.25);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawStaticBoard() {
+    sctx.clearRect(0, 0, W, H);
+
+    const left = board.binLeft - board.pitch * 1.05;
+    const right = board.binRight + board.pitch * 1.05;
+    const top = board.topY - board.rowGap * 1.45;
+    const bottom = board.baseline + 8;
+
+    const panel = sctx.createLinearGradient(0, top, 0, bottom);
+    panel.addColorStop(0, "rgba(5,9,9,0.03)");
+    panel.addColorStop(0.62, "rgba(5,9,9,0.13)");
+    panel.addColorStop(1, "rgba(5,9,9,0.22)");
+    sctx.fillStyle = panel;
+    sctx.fillRect(left, top, right - left, bottom - top);
+
+    chalkLine(sctx, board.centerX - board.pitch * 0.62, top + 5, board.centerX - board.pitch * 0.15, board.topY - board.rowGap * 0.38, 0.22, 2.6, 4);
+    chalkLine(sctx, board.centerX + board.pitch * 0.62, top + 5, board.centerX + board.pitch * 0.15, board.topY - board.rowGap * 0.38, 0.22, 2.6, 4);
+
+  }
+
+  function binCenter(i) {
+    return board.binLeft + i * board.binWidth + board.binWidth * 0.5;
+  }
+
+  function spawn(x, y, rowOverride) {
     if (flakes.length >= MAX_FALLING) return;
-    const d = DICT[(Math.random()*DICT.length)|0];
-    const px = currentFontPx() * (0.92 + Math.random()*0.18);
+    const d = DICT[(Math.random() * DICT.length) | 0];
+    const px = currentFontPx() * random(0.88, 1.16);
+    const startY = y === undefined ? board.topY - board.rowGap * 1.04 : y;
+    const startX = x === undefined ? board.centerX + random(-10, 10) : x;
+
     flakes.push({
-      t: d.t, k: d.k,
-      x: spoutX + (Math.random()-0.5)*8,
-      y: rowY[0] - 30,
-      vy: FALL_SPEED * (1 + (Math.random()-0.5)*FALL_SPEED_VAR),
-      phase: Math.random()*Math.PI*2,
-      rot: (Math.random()-0.5)*0.2,
-      px: px,
-      row: 0, born: performance.now(),
+      t: d.t,
+      k: d.k,
+      x: startX,
+      y: startY,
+      targetX: startX,
+      vx: random(-1.6, 1.6),
+      vy: random(56, 74),
+      row: rowOverride === undefined ? 0 : rowOverride,
+      bin: 0,
+      px,
+      born: performance.now(),
+      phase: random(0, Math.PI * 2),
+      rot: random(-0.18, 0.18),
+      spin: random(-0.08, 0.08),
+      trail: []
     });
   }
 
-  function stepPeg(g){
-    if (Math.random() < STEP_P) g.x -= PEG_PITCH*0.5;
-    else                        g.x += PEG_PITCH*0.5;
+  function stepPeg(g) {
+    const rowBefore = g.row;
+    const right = Math.random() < 0.5;
+    if (right) g.bin += 1;
+    g.row += 1;
+
+    const pegX = board.centerX + (g.bin - (right ? 1 : 0) - rowBefore / 2) * board.pitch;
+    const pegY = board.rowY[rowBefore];
+    addDust(pegX, pegY, 0.035, "impact", g.k);
+
+    if (g.row < board.rows) {
+      g.targetX = board.centerX + (g.bin - g.row / 2) * board.pitch;
+    } else {
+      g.targetX = binCenter(g.bin);
+    }
+
+    g.vx += (right ? 1 : -1) * random(2.8, 7.2);
+    g.vy *= random(0.985, 1.02);
+    g.rot += (right ? 1 : -1) * random(0.012, 0.045);
     plink();
   }
 
-  // ---------- Audio ----------
-  let actx=null, lastPlink=0;
-  function ensureAudio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
-  function plink(){
-    if(!actx) return;
-    const now = performance.now();
-    if (now - lastPlink < PLINK_COOLDOWN) return;
-    lastPlink = now;
-    const o = actx.createOscillator(), g = actx.createGain();
-    o.type = "triangle";
-    o.frequency.value = 1100 + Math.random()*900;
-    g.gain.value = 0;
-    g.gain.linearRampToValueAtTime(PLINK_VOL, actx.currentTime+0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+0.10);
-    o.connect(g).connect(actx.destination);
-    o.start(); o.stop(actx.currentTime+0.12);
-  }
-  addEventListener("pointerdown", ()=>{ ensureAudio(); }, {once:true, passive:true});
-  // ---------- Marks (the body of the bell) ----------
-  // A mark is anchored to (column i, hFrac in [0..1]) where 1 = top of column.
-  // As the column shrinks (compression) or shifts (lateral flow), the mark
-  // rides the surface. Marks store their own font px so deeper layers stay
-  // big-from-when-they-were-fresh while new arrivals are smaller.
-  const marks = [];
-  function pushMark(i, text, k, px){
-    const cap = lerp(MAX_MARKS_BASE, MAX_MARKS_LATE, progressEased());
-    while (marks.length > cap) marks.shift();
-    marks.push({
-      i: i, hFrac: 0.985,
-      text: text, k: k,
-      rot: (Math.random()-0.5)*0.55,
-      alpha: MARK_ALPHA_FRESH, age: 0,
-      px: px,
-      jx: (Math.random()-0.5)*COL_PX*1.6,
-      jy: (Math.random()-0.5)*1.5,
+  function addDust(x, y, alpha, kind, k) {
+    if (dust.length > MAX_DUST) dust.splice(0, dust.length - MAX_DUST);
+    dust.push({
+      x: x + random(-6, 6),
+      y: y + random(-5, 5),
+      r: kind === "settle" ? random(1.1, 3.8) : random(0.6, 2.1),
+      a: alpha * random(0.4, 1),
+      life: kind === "settle" ? random(110, 240) : random(18, 42),
+      kind,
+      k
     });
   }
 
-  // ---------- Helpers ----------
-  let T0 = performance.now();
-  function progress(){ return Math.min(1, (performance.now()-T0)/(RUNTIME_S*1000)); }
-  function progressEased(){ const p=progress(); return p<0.5? 2*p*p : 1 - Math.pow(-2*p+2,2)/2; }
-  function lerp(a,b,t){ return a + (b-a)*t; }
-  // ---------- Field dynamics ----------
-  function fieldStep(dt){
-    if(!h) return;
-    const p = progressEased();
-    const erosion = lerp(EROSION_BASE, EROSION_LATE, p);
-    const flow    = lerp(FLOW_RATE_BASE, FLOW_RATE_LATE, p);
-    const cap     = H*FIELD_CAP_FRAC;
+  function land(g) {
+    const bin = clamp(g.bin, 0, board.binCount - 1);
+    counts[bin] += 1;
+    trials += 1;
 
-    // 1) Compression
-    for (let i=0; i<nCols; i++){
-      if (h[i] > 0) {
-        h[i] -= h[i] * erosion * dt;
-        if (h[i] < 0) h[i] = 0;
-      }
+    const mark = {
+      bin,
+      slot: counts[bin],
+      text: g.t,
+      k: g.k,
+      px: g.px,
+      alpha: random(0.30, 0.68),
+      rot: g.rot + random(-0.26, 0.26),
+      jx: random(-board.binWidth * 0.34, board.binWidth * 0.34),
+      jy: random(-3.8, 3.8),
+      born: performance.now()
+    };
+
+    marks.push(mark);
+    if (marks.length > MAX_MARKS) marks.splice(0, marks.length - MAX_MARKS);
+
+    for (let i = 0; i < 5; i += 1) {
+      addDust(binCenter(bin) + random(-board.binWidth * 0.34, board.binWidth * 0.34), board.baseline - random(0, 18), 0.20, "settle", g.k);
     }
 
-    // 2) Lateral transport
-    for (let pass=0; pass<2; pass++){
-      const dir = pass===0 ? 1 : -1;
-      const start = dir>0 ? 0 : nCols-2;
-      const end   = dir>0 ? nCols-1 : -1;
-      for (let i=start; i!==end; i+=dir){
-        const j = i+1;
-        if (j<0 || j>=nCols) continue;
-        const dh = h[i] - h[j];
-        const slope = dh / COL_PX;
-        if (Math.abs(slope) > REPOSE_SLOPE){
-          const excess = (Math.abs(slope) - REPOSE_SLOPE) * COL_PX;
-          const move = Math.sign(dh) * excess * flow * dt * 60;
-          h[i] -= move; h[j] += move;
-        }
-      }
-    }
-
-    // 3) Cap
-    for (let i=0; i<nCols; i++) if (h[i] > cap) h[i] = cap;
-
-    // 4) Marks ride the surface and slide off shoulders.
-    //    They also gradually shrink toward the current global font px,
-    //    representing the chalk getting compressed/rewritten over.
-    const targetPx = currentFontPx();
-    for (let m=0; m<marks.length; m++){
-      const mk = marks[m];
-      mk.age += dt;
-      mk.alpha = Math.max(MARK_FADE_FLOOR, mk.alpha - MARK_ALPHA_DECAY*dt);
-      // gentle shrink toward target px so the bell becomes visually denser
-      mk.px += (Math.min(mk.px, targetPx*1.05) - mk.px) * Math.min(1, 0.04*dt);
-      // top-of-column marks slide downhill toward shorter neighbors
-      if (mk.hFrac > 0.55){
-        const i = mk.i;
-        const here = h[i];
-        const left  = i>0       ? h[i-1] : Infinity;
-        const right = i<nCols-1 ? h[i+1] : Infinity;
-        if (left  < here - COL_PX*REPOSE_SLOPE && Math.random()<0.30) mk.i = Math.max(0, mk.i - 1);
-        else if (right < here - COL_PX*REPOSE_SLOPE && Math.random()<0.30) mk.i = Math.min(nCols-1, mk.i + 1);
-      }
-      // marks deeper in the column also drift down a touch in hFrac as compression pushes them
-      mk.hFrac -= 0.0008 * dt * (1 - mk.hFrac*0.5);
-      if (mk.hFrac < 0.02) mk.hFrac = 0.02;
-    }
-  }
-  // ---------- Landing: token -> column height + new mark ----------
-  function land(g){
-    const i = colOfX(g.x);
-    const STEP = g.px * 0.85;
-    const cap = H*FIELD_CAP_FRAC;
-    h[i] = Math.min(cap, h[i] + STEP);
-    pushMark(i, g.t, g.k, g.px);
+    counter.textContent = trials + (trials === 1 ? " trial" : " trials");
   }
 
-  // ---------- Render: falling layer ----------
-  function drawFalling(dt){
-    tctx.globalCompositeOperation = "destination-out";
-    tctx.fillStyle = "rgba(0,0,0," + TRAIL_FADE.toFixed(3) + ")";
-    tctx.fillRect(0,0,W,H);
-    tctx.globalCompositeOperation = "source-over";
+  function drawChalkText(ctx, text, k, px, alpha) {
+    ctx.font = fontFor(k, px);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = colorFor(k, alpha * 0.55);
+    ctx.shadowBlur = k === "ghost" ? 18 : 11;
+    ctx.lineWidth = Math.max(1.5, px * 0.12);
+    ctx.strokeStyle = "rgba(0,0,0," + (0.18 * alpha).toFixed(3) + ")";
+    ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = colorFor(k, alpha);
+    ctx.fillText(text, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255," + (alpha * 0.075).toFixed(3) + ")";
+    ctx.fillText(text, random(-0.45, 0.45), random(-0.45, 0.45));
+  }
+
+  function drawFalling(dt) {
+    tctx.clearRect(0, 0, W, H);
 
     const now = performance.now();
-    for (let i=flakes.length-1; i>=0; i--){
-      const g = flakes[i];
-      while (g.row < ROWS && g.y >= rowY[g.row]) {
-        stepPeg(g);
-        g.row++;
-      }
-      g.y += g.vy * dt;
-      g.x += Math.sin(now*0.001*Math.PI*2*SWAY_FREQ_HZ + g.phase) * SWAY_AMP * dt;
 
-      const ci = colOfX(g.x);
-      const surf = baselineY() - h[ci];
-      if (g.y >= surf - 1 && g.row >= ROWS){
+    for (let i = flakes.length - 1; i >= 0; i -= 1) {
+      const g = flakes[i];
+
+      while (g.row < board.rows && g.y >= board.rowY[g.row]) {
+        stepPeg(g);
+      }
+
+      const seek = 1 - Math.exp(-dt * 7.2);
+      const drift = Math.sin(now * 0.0015 + g.phase) * 3.2;
+      g.vx *= Math.pow(0.86, dt * 60);
+      g.x += (g.targetX - g.x) * seek;
+      g.x += g.vx * dt * 0.45 + drift * dt;
+      g.y += g.vy * dt;
+      g.vy += 6.5 * dt;
+      g.rot += g.spin * dt;
+
+      const peak = Math.max(1, ...counts);
+      const scale = board.maxPile / peak;
+      const surface = board.baseline - counts[clamp(g.bin, 0, board.binCount - 1)] * scale;
+      if (g.row >= board.rows && g.y >= surface - 5) {
         land(g);
-        flakes.splice(i,1);
+        flakes.splice(i, 1);
         continue;
       }
 
-      const a = Math.min(1, (now - g.born)/700) * GLYPH_ALPHA_FALL * (g.k==="ghost"?0.85:1);
+      if (g.y > H + 70 || g.x < -260 || g.x > W + 260) {
+        flakes.splice(i, 1);
+        continue;
+      }
+
+      g.trail.push({ x: g.x, y: g.y });
+      if (g.trail.length > 16) g.trail.shift();
+
+      for (let j = 1; j < g.trail.length; j += 1) {
+        const p0 = g.trail[j - 1];
+        const p1 = g.trail[j];
+        const a = (j / g.trail.length) * 0.018;
+        tctx.beginPath();
+        tctx.moveTo(p0.x, p0.y);
+        tctx.lineTo(p1.x, p1.y);
+        tctx.strokeStyle = colorFor(g.k, a);
+        tctx.lineWidth = Math.max(1, g.px * 0.09 * (j / g.trail.length));
+        tctx.lineCap = "round";
+        tctx.stroke();
+      }
+
+      const bornA = clamp((now - g.born) / 680, 0, 1);
+      const alpha = bornA * (g.k === "ghost" ? 0.26 : 0.22);
       tctx.save();
       tctx.translate(g.x, g.y);
       tctx.rotate(g.rot);
-      tctx.font = fontFor(g.k, g.px);
-      tctx.fillStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
-      tctx.textAlign = "center"; tctx.textBaseline = "middle";
-      tctx.fillText(g.t, 0, 0);
+      drawChalkText(tctx, g.t, g.k, g.px, alpha);
       tctx.restore();
     }
   }
-  // ---------- Render: faint contour + pegs ----------
-  function drawField(){
-    fctx.clearRect(0,0,W,H);
-    // a single thin chalk line traces the surface as a guide
-    fctx.beginPath();
-    let started = false;
-    for (let i=0; i<nCols; i++){
-      if (h[i] <= 0) { started = false; continue; }
-      const x = xOfCol(i);
-      const y = baselineY() - h[i];
-      if (!started) { fctx.moveTo(x, y); started = true; }
-      else fctx.lineTo(x, y);
-    }
-    fctx.strokeStyle = "rgba(232,238,248,0.10)";
-    fctx.lineWidth = 1;
-    fctx.stroke();
 
-    // pegs
-    fctx.fillStyle = "rgba(232,238,248,0.10)";
-    for (let i=0; i<pegs.length; i++){
-      const p = pegs[i];
-      fctx.beginPath();
-      fctx.arc(p.x, p.y, 1.5, 0, Math.PI*2);
-      fctx.fill();
-    }
-  }
+  function drawMarks(dt) {
+    mctx.clearRect(0, 0, W, H);
 
-  // ---------- Render: marks ----------
-  // The bell is *literally* drawn here, as overlapping text glyphs.
-  function drawMarks(){
-    mctx.clearRect(0,0,W,H);
-    mctx.textAlign = "center"; mctx.textBaseline = "middle";
-    for (let m=0; m<marks.length; m++){
-      const mk = marks[m];
-      const colH = h[mk.i];
-      if (colH <= 0) continue;
-      const x = xOfCol(mk.i) + mk.jx;
-      const y = baselineY() - colH * mk.hFrac + mk.jy;
-      // deeper marks (low hFrac) read smaller and slightly fainter — the body compacts
-      const depthShrink = lerp(FONT_SETTLE_MIN, 1.0, mk.hFrac);
-      const px = Math.max(6, mk.px * depthShrink);
-      const a  = mk.alpha * (0.55 + 0.45*mk.hFrac);
+    const peak = Math.max(1, ...counts);
+    const scale = board.maxPile / peak;
+
+    for (let i = dust.length - 1; i >= 0; i -= 1) {
+      const d = dust[i];
+      d.life -= dt * 60;
+      d.a *= Math.pow(0.988, dt * 60);
+      if (d.life <= 0 || d.a < 0.006) {
+        dust.splice(i, 1);
+        continue;
+      }
+
+      const color = d.k === "ghost" ? "186,224,255" : d.k === "human" ? "215,246,225" : "242,245,235";
+      const g = mctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r * 4.2);
+      g.addColorStop(0, "rgba(" + color + "," + d.a.toFixed(3) + ")");
+      g.addColorStop(0.5, "rgba(" + color + "," + (d.a * 0.28).toFixed(3) + ")");
+      g.addColorStop(1, "rgba(" + color + ",0)");
+      mctx.fillStyle = g;
+      mctx.beginPath();
+      mctx.arc(d.x, d.y, d.r * 4.2, 0, Math.PI * 2);
+      mctx.fill();
+    }
+
+    for (const mark of marks) {
+      const depth = mark.slot / Math.max(1, counts[mark.bin]);
+      const x = binCenter(mark.bin) + mark.jx;
+      const y = board.baseline - mark.slot * scale + mark.jy;
+      const settleShrink = lerp(0.60, 1, depth);
+      const px = Math.max(6, mark.px * settleShrink);
+      const alpha = mark.alpha * lerp(0.62, 1, depth);
+
       mctx.save();
       mctx.translate(x, y);
-      mctx.rotate(mk.rot);
-      mctx.font = fontFor(mk.k, px);
-      mctx.fillStyle = "rgba(232,238,248," + a.toFixed(3) + ")";
-      mctx.fillText(mk.text, 0, 0);
+      mctx.rotate(mark.rot);
+      drawChalkText(mctx, mark.text, mark.k, px, alpha);
       mctx.restore();
     }
   }
-  // ---------- Click burst ----------
-  addEventListener("pointerdown", (e) => {
-    const n = 6 + ((Math.random()*4)|0);
-    for (let i=0; i<n; i++){
-      const d = DICT[(Math.random()*DICT.length)|0];
-      const px = currentFontPx() * (0.92 + Math.random()*0.18);
-      flakes.push({
-        t: d.t, k: d.k,
-        x: e.clientX + (Math.random()-0.5)*16,
-        y: e.clientY + (Math.random()-0.5)*8,
-        vy: FALL_SPEED * (0.6 + Math.random()*0.8),
-        phase: Math.random()*Math.PI*2,
-        rot: (Math.random()-0.5)*0.4,
-        px: px,
-        row: ROWS, born: performance.now(),
-      });
-    }
-  }, { passive: true });
 
-  // ---------- Main loop ----------
-  let lastT = performance.now();
-  function tick(){
+  function drawField() {
+    fctx.clearRect(0, 0, W, H);
+    fctx.drawImage(staticC, 0, 0, W, H);
+  }
+
+  function ensureAudio() {
+    if (actx) return;
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      actx = null;
+    }
+  }
+
+  function plink() {
+    if (!actx) return;
     const now = performance.now();
+    if (now - lastPlink < 68) return;
+    lastPlink = now;
+
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = random(860, 1680);
+    gain.gain.value = 0.0001;
+    gain.gain.exponentialRampToValueAtTime(0.010, actx.currentTime + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.09);
+    osc.connect(gain).connect(actx.destination);
+    osc.start();
+    osc.stop(actx.currentTime + 0.1);
+  }
+
+  function clickBurst(e) {
+    ensureAudio();
+    const n = 7 + ((Math.random() * 5) | 0);
+    for (let i = 0; i < n; i += 1) {
+      spawn(e.clientX + random(-14, 14), e.clientY + random(-8, 8), board.rows);
+    }
+  }
+
+  function tick(now) {
     let dt = (now - lastT) / 1000;
     if (dt > 0.05) dt = 0.05;
     lastT = now;
 
-    const p = progressEased();
-    const spawnMs = lerp(SPAWN_MS_EARLY, SPAWN_MS_LATE, p);
-    if (now - lastSpawn > nextSpawn){
+    if (now - lastSpawn > SPAWN_MS) {
       spawn();
       lastSpawn = now;
-      nextSpawn = spawnMs * (0.7 + Math.random()*0.6);
     }
 
-    fieldStep(dt);
     drawFalling(dt);
+    drawMarks(dt);
     drawField();
-    drawMarks();
-
     requestAnimationFrame(tick);
   }
 
-  // ---------- Boot ----------
+  window.addEventListener("resize", resize);
+  window.addEventListener("pointerdown", clickBurst, { passive: true });
+  window.addEventListener("pointerdown", ensureAudio, { once: true, passive: true });
+
   resize();
-  T0 = performance.now();
-  lastT = T0;
+  lastT = performance.now();
+  lastSpawn = lastT - SPAWN_MS;
   requestAnimationFrame(tick);
 })();
 </script>

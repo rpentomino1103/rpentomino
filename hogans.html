@@ -186,49 +186,49 @@
   });
 
   const DICT = [
-    { t: "P(A and B) = P(A)P(B|A)", k: "math" },
-    { t: "lim (1+1/n)^n = e", k: "math" },
-    { t: "Σ 1/n² = π²/6", k: "math" },
-    { t: "Σ 1/n⁴ = π⁴/90", k: "math" },
-    { t: "ζ(s) = Σ 1/n^s", k: "math" },
-    { t: "ζ(s) = ∏ 1/(1 − p^{-s})", k: "math" },
-    { t: "γ = lim (Σ 1/k − ln n)", k: "math" },
-    { t: "π(n) ~ n / ln n", k: "math" },
-    { t: "Σ μ(d) = [n=1]", k: "math" },
-    { t: "Σ_{d|n} φ(d) = n", k: "math" },
-    { t: "(p−1)! ≡ −1 (mod p)", k: "math" },
-    { t: "e^x = Σ x^n / n!", k: "math" },
-    { t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math" },
-    { t: "cos x = Σ (−1)^n x^{2n}/(2n)!", k: "math" },
-    { t: "1729 = 1³+12³ = 9³+10³", k: "math" },
-    { t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math" },
-    { t: "x² − Dy² = 1   [Pell]", k: "math" },
-    { t: "∫ e^{-x²} dx = √π", k: "math" },
-    { t: "∇·F = 0", k: "math" },
-    { t: "∇×E = -∂B/∂t", k: "math" },
-    { t: "E = mc²", k: "math" },
-    { t: "λ = h/p", k: "math" },
-    { t: "ΔxΔp ≥ ℏ/2", k: "math" },
-    { t: "S = k ln W", k: "math" },
-    { t: "F = ma", k: "math" },
-    { t: "∮ F·dr = 0", k: "math" },
-    { t: "∇²φ = 0", k: "math" },
-    { t: "∂u/∂t = α∇²u", k: "math" },
-    { t: "iℏ∂ψ/∂t = Ĥψ", k: "math" },
-    { t: "det(A - λI) = 0", k: "math" },
-    { t: "tr(AB) = tr(BA)", k: "math" },
-    { t: "A⁻¹ = adj(A)/det(A)", k: "math" },
-    { t: "f'(x) = lim(h→0) (f(x+h)-f(x))/h", k: "math" },
-    { t: "∫_a^b f(x)dx = F(b)-F(a)", k: "math" },
-    { t: "Σ_{k=0}^n C(n,k) = 2^n", k: "math" },
-    { t: "lim_{x→0} sin(x)/x = 1", k: "math" },
-    { t: "e^{iπ} + 1 = 0", k: "math" },
-    { t: "Γ(n+1) = n!", k: "math" },
-    { t: "B(p,q) = Γ(p)Γ(q)/Γ(p+q)", k: "math" },
-    { t: "J_ν(x) = Σ (-1)^m (x/2)^{2m+ν}/(m!Γ(m+ν+1))", k: "math" },
-    { t: "∇·v = 0", k: "math" },
-    { t: "∂ρ/∂t + ∇·(ρv) = 0", k: "math" },
-    { t: "ρ(Dv/Dt) = -∇p + μ∇²v", k: "math" }
+    { t: "E = mc²", k: "math", w: 1.0 },
+    { t: "e^{iπ} + 1 = 0", k: "math", w: 1.0 },
+    { t: "F = ma", k: "math", w: 0.95 },
+    { t: "ΔxΔp ≥ ℏ/2", k: "math", w: 0.95 },
+    { t: "S = k ln W", k: "math", w: 0.9 },
+    { t: "λ = h/p", k: "math", w: 0.9 },
+    { t: "∇·F = 0", k: "math", w: 0.85 },
+    { t: "∇×E = -∂B/∂t", k: "math", w: 0.85 },
+    { t: "∇²φ = 0", k: "math", w: 0.8 },
+    { t: "iℏ∂ψ/∂t = Ĥψ", k: "math", w: 0.8 },
+    { t: "∂u/∂t = α∇²u", k: "math", w: 0.75 },
+    { t: "∫ e^{-x²} dx = √π", k: "math", w: 0.75 },
+    { t: "lim (1+1/n)^n = e", k: "math", w: 0.7 },
+    { t: "Σ 1/n² = π²/6", k: "math", w: 0.7 },
+    { t: "e^x = Σ x^n / n!", k: "math", w: 0.65 },
+    { t: "sin x = Σ (−1)^n x^{2n+1}/(2n+1)!", k: "math", w: 0.65 },
+    { t: "cos x = Σ (−1)^n x^{2n}/(2n)!", k: "math", w: 0.65 },
+    { t: "P(A and B) = P(A)P(B|A)", k: "math", w: 0.6 },
+    { t: "ζ(s) = Σ 1/n^s", k: "math", w: 0.6 },
+    { t: "ζ(s) = ∏ 1/(1 − p^{-s})", k: "math", w: 0.6 },
+    { t: "γ = lim (Σ 1/k − ln n)", k: "math", w: 0.55 },
+    { t: "π(n) ~ n / ln n", k: "math", w: 0.55 },
+    { t: "Σ μ(d) = [n=1]", k: "math", w: 0.5 },
+    { t: "Σ_{d|n} φ(d) = n", k: "math", w: 0.5 },
+    { t: "(p−1)! ≡ −1 (mod p)", k: "math", w: 0.5 },
+    { t: "1729 = 1³+12³ = 9³+10³", k: "math", w: 0.45 },
+    { t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math", w: 0.45 },
+    { t: "x² − Dy² = 1   [Pell]", k: "math", w: 0.45 },
+    { t: "Σ 1/n⁴ = π⁴/90", k: "math", w: 0.4 },
+    { t: "∮ F·dr = 0", k: "math", w: 0.4 },
+    { t: "det(A - λI) = 0", k: "math", w: 0.35 },
+    { t: "tr(AB) = tr(BA)", k: "math", w: 0.35 },
+    { t: "A⁻¹ = adj(A)/det(A)", k: "math", w: 0.35 },
+    { t: "f'(x) = lim(h→0) (f(x+h)-f(x))/h", k: "math", w: 0.3 },
+    { t: "∫_a^b f(x)dx = F(b)-F(a)", k: "math", w: 0.3 },
+    { t: "Σ_{k=0}^n C(n,k) = 2^n", k: "math", w: 0.3 },
+    { t: "lim_{x→0} sin(x)/x = 1", k: "math", w: 0.25 },
+    { t: "Γ(n+1) = n!", k: "math", w: 0.25 },
+    { t: "B(p,q) = Γ(p)Γ(q)/Γ(p+q)", k: "math", w: 0.2 },
+    { t: "J_ν(x) = Σ (-1)^m (x/2)^{2m+ν}/(m!Γ(m+ν+1))", k: "math", w: 0.2 },
+    { t: "∇·v = 0", k: "math", w: 0.15 },
+    { t: "∂ρ/∂t + ∇·(ρv) = 0", k: "math", w: 0.15 },
+    { t: "ρ(Dv/Dt) = -∇p + μ∇²v", k: "math", w: 0.1 }
   ];
 
   let W = 0;
@@ -278,8 +278,10 @@
     return "rgba(203,230,255," + alpha.toFixed(3) + ")";
   }
 
-  function currentFontPx() {
-    return random(5.0, 14.0);
+  function currentFontPx(weight) {
+    const base = 5.0;
+    const range = 12.0;
+    return base + weight * range + random(-0.5, 0.5);
   }
 
   function resize() {
@@ -402,7 +404,8 @@
   function spawn(x, y, rowOverride) {
     if (flakes.length >= MAX_FALLING) return;
     const d = DICT[(Math.random() * DICT.length) | 0];
-    const px = currentFontPx() * random(0.88, 1.16);
+    const weight = d.w || 0.5;
+    const px = currentFontPx(weight) * random(0.92, 1.08);
     const startY = y === undefined ? board.topY - board.rowGap * 1.04 : y;
     const startX = x === undefined ? board.centerX + random(-10, 10) : x;
 
@@ -471,7 +474,7 @@
       text: g.t,
       k: g.k,
       px: g.px,
-      alpha: random(0.35, 0.65),
+      alpha: random(0.15, 0.22),
       rot: g.rot + random(-0.15, 0.15),
       jx: random(-board.binWidth * 0.28, board.binWidth * 0.28),
       jy: random(-2.5, 2.5),
@@ -554,7 +557,7 @@
       }
 
       const bornA = clamp((now - g.born) / 720, 0, 1);
-      const alpha = bornA * (g.k === "poetic" ? 0.22 : g.k === "human" ? 0.19 : 0.17);
+      const alpha = bornA * 0.18;
       tctx.save();
       tctx.translate(g.x, g.y);
       tctx.rotate(g.rot);
@@ -593,9 +596,9 @@
       const depth = mark.slot / Math.max(1, counts[mark.bin]);
       const x = binCenter(mark.bin) + mark.jx;
       const y = board.baseline - mark.slot * scale + mark.jy;
-      const settleShrink = lerp(0.80, 1, depth);
+      const settleShrink = lerp(0.85, 1, depth);
       const px = Math.max(6, mark.px * settleShrink);
-      const alpha = mark.alpha * lerp(0.92, 1, depth);
+      const alpha = mark.alpha * lerp(0.95, 1, depth);
 
       mctx.save();
       mctx.translate(x, y);

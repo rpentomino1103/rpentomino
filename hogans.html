@@ -155,10 +155,10 @@
 
   const ROWS_DESKTOP = 12;
   const ROWS_MOBILE = 10;
-  const SPAWN_MS = 180;
-  const MAX_FALLING = 70;
-  const MAX_MARKS = 9500;
-  const MAX_DUST = 1800;
+  const SPAWN_MS = 120;
+  const MAX_FALLING = 90;
+  const MAX_MARKS = 12000;
+  const MAX_DUST = 2000;
 
   const bg = document.getElementById("bgimg");
   const fallC = document.getElementById("fall");
@@ -279,7 +279,7 @@
   }
 
   function currentFontPx() {
-    return random(6.5, 11.5);
+    return random(5.0, 14.0);
   }
 
   function resize() {
@@ -413,14 +413,14 @@
       y: startY,
       targetX: startX,
       vx: random(-1.6, 1.6),
-      vy: random(32, 45),
+      vy: random(45, 65),
       row: rowOverride === undefined ? 0 : rowOverride,
       bin: 0,
       px,
       born: performance.now(),
       phase: random(0, Math.PI * 2),
       rot: random(-0.18, 0.18),
-      spin: random(-0.02, 0.02),
+      spin: random(-0.012, 0.012),
       trail: []
     });
   }
@@ -441,9 +441,9 @@
       g.targetX = binCenter(g.bin);
     }
 
-    g.vx += (right ? 1 : -1) * random(1.2, 3.2);
-    g.vy *= random(0.995, 1.012);
-    g.rot += (right ? 1 : -1) * random(0.005, 0.018);
+    g.vx += (right ? 1 : -1) * random(1.5, 3.5);
+    g.vy *= random(0.992, 1.015);
+    g.rot += (right ? 1 : -1) * random(0.006, 0.020);
     plink();
   }
 
@@ -514,14 +514,14 @@
         stepPeg(g);
       }
 
-      const seek = 1 - Math.exp(-dt * 5.5);
-      const drift = Math.sin(now * 0.0012 + g.phase) * 2.5;
+      const seek = 1 - Math.exp(-dt * 8.0);
+      const drift = Math.sin(now * 0.0015 + g.phase) * 1.5;
       g.vx *= Math.pow(0.94, dt * 60);
       g.x += (g.targetX - g.x) * seek;
-      g.x += g.vx * dt * 0.3 + drift * dt * 0.6;
+      g.x += g.vx * dt * 0.35 + drift * dt * 0.8;
       g.y += g.vy * dt;
-      g.vy += 3.5 * dt;
-      g.rot += g.spin * dt * 0.5;
+      g.vy += 4.5 * dt;
+      g.rot += g.spin * dt * 0.6;
 
       const peak = Math.max(1, ...counts);
       const scale = board.maxPile / peak;
@@ -593,9 +593,9 @@
       const depth = mark.slot / Math.max(1, counts[mark.bin]);
       const x = binCenter(mark.bin) + mark.jx;
       const y = board.baseline - mark.slot * scale + mark.jy;
-      const settleShrink = lerp(0.60, 1, depth);
+      const settleShrink = lerp(0.70, 1, depth);
       const px = Math.max(6, mark.px * settleShrink);
-      const alpha = mark.alpha * lerp(0.62, 1, depth);
+      const alpha = mark.alpha * lerp(0.85, 1, depth);
 
       mctx.save();
       mctx.translate(x, y);

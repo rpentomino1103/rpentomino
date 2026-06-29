@@ -147,10 +147,6 @@
 <div class="warmth" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
-<div class="plate" aria-hidden="true">
-  <strong>p = 0.5</strong>
-  <span id="counter">0 trials</span>
-</div>
 
 <script>
 (() => {
@@ -168,7 +164,6 @@
   const fallC = document.getElementById("fall");
   const marksC = document.getElementById("marks");
   const fieldC = document.getElementById("field");
-  const counter = document.getElementById("counter");
   const tctx = fallC.getContext("2d");
   const mctx = marksC.getContext("2d");
   const fctx = fieldC.getContext("2d");
@@ -208,25 +203,32 @@
     { t: "1729 = 1³+12³ = 9³+10³", k: "math" },
     { t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math" },
     { t: "x² − Dy² = 1   [Pell]", k: "math" },
-    { t: "entropy increases", k: "human" },
-    { t: "time's arrow", k: "human" },
-    { t: "emergent order", k: "human" },
-    { t: "strange attractor", k: "human" },
-    { t: "phase transition", k: "human" },
-    { t: "critical mass", k: "human" },
-    { t: "tipping point", k: "human" },
-    { t: "butterfly effect", k: "human" },
-    { t: "self-organizing", k: "human" },
-    { t: "pattern recognition", k: "human" },
-    { t: "the void stares back", k: "poetic" },
-    { t: "silence has weight", k: "poetic" },
-    { t: "light bends", k: "poetic" },
-    { t: "time dilates", k: "poetic" },
-    { t: "entropy whispers", k: "poetic" },
-    { t: "chaos dances", k: "poetic" },
-    { t: "patterns emerge", k: "poetic" },
-    { t: "the curve finds form", k: "poetic" },
-    { t: "order from noise", k: "poetic" }
+    { t: "∫ e^{-x²} dx = √π", k: "math" },
+    { t: "∇·F = 0", k: "math" },
+    { t: "∇×E = -∂B/∂t", k: "math" },
+    { t: "E = mc²", k: "math" },
+    { t: "λ = h/p", k: "math" },
+    { t: "ΔxΔp ≥ ℏ/2", k: "math" },
+    { t: "S = k ln W", k: "math" },
+    { t: "F = ma", k: "math" },
+    { t: "∮ F·dr = 0", k: "math" },
+    { t: "∇²φ = 0", k: "math" },
+    { t: "∂u/∂t = α∇²u", k: "math" },
+    { t: "iℏ∂ψ/∂t = Ĥψ", k: "math" },
+    { t: "det(A - λI) = 0", k: "math" },
+    { t: "tr(AB) = tr(BA)", k: "math" },
+    { t: "A⁻¹ = adj(A)/det(A)", k: "math" },
+    { t: "f'(x) = lim(h→0) (f(x+h)-f(x))/h", k: "math" },
+    { t: "∫_a^b f(x)dx = F(b)-F(a)", k: "math" },
+    { t: "Σ_{k=0}^n C(n,k) = 2^n", k: "math" },
+    { t: "lim_{x→0} sin(x)/x = 1", k: "math" },
+    { t: "e^{iπ} + 1 = 0", k: "math" },
+    { t: "Γ(n+1) = n!", k: "math" },
+    { t: "B(p,q) = Γ(p)Γ(q)/Γ(p+q)", k: "math" },
+    { t: "J_ν(x) = Σ (-1)^m (x/2)^{2m+ν}/(m!Γ(m+ν+1))", k: "math" },
+    { t: "∇·v = 0", k: "math" },
+    { t: "∂ρ/∂t + ∇·(ρv) = 0", k: "math" },
+    { t: "ρ(Dv/Dt) = -∇p + μ∇²v", k: "math" }
   ];
 
   let W = 0;
@@ -277,7 +279,7 @@
   }
 
   function currentFontPx() {
-    return 8.8;
+    return random(6.5, 11.5);
   }
 
   function resize() {
@@ -354,7 +356,6 @@
     flakes = [];
     dust = [];
     trials = 0;
-    counter.textContent = "0 trials";
   }
 
   function chalkLine(ctx, x1, y1, x2, y2, alpha, width, passes) {
@@ -392,21 +393,6 @@
   function drawStaticBoard() {
     sctx.clearRect(0, 0, W, H);
 
-    const left = board.binLeft - board.pitch * 1.05;
-    const right = board.binRight + board.pitch * 1.05;
-    const top = board.topY - board.rowGap * 1.45;
-    const bottom = board.baseline + 8;
-
-    const panel = sctx.createLinearGradient(0, top, 0, bottom);
-    panel.addColorStop(0, "rgba(5,9,9,0.03)");
-    panel.addColorStop(0.62, "rgba(5,9,9,0.13)");
-    panel.addColorStop(1, "rgba(5,9,9,0.22)");
-    sctx.fillStyle = panel;
-    sctx.fillRect(left, top, right - left, bottom - top);
-
-    chalkLine(sctx, board.centerX - board.pitch * 0.62, top + 5, board.centerX - board.pitch * 0.15, board.topY - board.rowGap * 0.38, 0.22, 2.6, 4);
-    chalkLine(sctx, board.centerX + board.pitch * 0.62, top + 5, board.centerX + board.pitch * 0.15, board.topY - board.rowGap * 0.38, 0.22, 2.6, 4);
-
   }
 
   function binCenter(i) {
@@ -427,14 +413,14 @@
       y: startY,
       targetX: startX,
       vx: random(-1.6, 1.6),
-      vy: random(38, 52),
+      vy: random(32, 45),
       row: rowOverride === undefined ? 0 : rowOverride,
       bin: 0,
       px,
       born: performance.now(),
       phase: random(0, Math.PI * 2),
       rot: random(-0.18, 0.18),
-      spin: random(-0.04, 0.04),
+      spin: random(-0.02, 0.02),
       trail: []
     });
   }
@@ -455,9 +441,9 @@
       g.targetX = binCenter(g.bin);
     }
 
-    g.vx += (right ? 1 : -1) * random(1.8, 4.5);
-    g.vy *= random(0.992, 1.015);
-    g.rot += (right ? 1 : -1) * random(0.008, 0.028);
+    g.vx += (right ? 1 : -1) * random(1.2, 3.2);
+    g.vy *= random(0.995, 1.012);
+    g.rot += (right ? 1 : -1) * random(0.005, 0.018);
     plink();
   }
 
@@ -485,21 +471,19 @@
       text: g.t,
       k: g.k,
       px: g.px,
-      alpha: random(0.30, 0.68),
-      rot: g.rot + random(-0.26, 0.26),
-      jx: random(-board.binWidth * 0.34, board.binWidth * 0.34),
-      jy: random(-3.8, 3.8),
+      alpha: random(0.35, 0.65),
+      rot: g.rot + random(-0.15, 0.15),
+      jx: random(-board.binWidth * 0.28, board.binWidth * 0.28),
+      jy: random(-2.5, 2.5),
       born: performance.now()
     };
 
     marks.push(mark);
     if (marks.length > MAX_MARKS) marks.splice(0, marks.length - MAX_MARKS);
 
-    for (let i = 0; i < 5; i += 1) {
-      addDust(binCenter(bin) + random(-board.binWidth * 0.34, board.binWidth * 0.34), board.baseline - random(0, 18), 0.20, "settle", g.k);
+    for (let i = 0; i < 4; i += 1) {
+      addDust(binCenter(bin) + random(-board.binWidth * 0.28, board.binWidth * 0.28), board.baseline - random(0, 12), 0.18, "settle", g.k);
     }
-
-    counter.textContent = trials + (trials === 1 ? " trial" : " trials");
   }
 
   function drawChalkText(ctx, text, k, px, alpha) {
@@ -530,14 +514,14 @@
         stepPeg(g);
       }
 
-      const seek = 1 - Math.exp(-dt * 7.2);
-      const drift = Math.sin(now * 0.0015 + g.phase) * 3.2;
-      g.vx *= Math.pow(0.92, dt * 60);
+      const seek = 1 - Math.exp(-dt * 5.5);
+      const drift = Math.sin(now * 0.0012 + g.phase) * 2.5;
+      g.vx *= Math.pow(0.94, dt * 60);
       g.x += (g.targetX - g.x) * seek;
-      g.x += g.vx * dt * 0.35 + drift * dt * 0.7;
+      g.x += g.vx * dt * 0.3 + drift * dt * 0.6;
       g.y += g.vy * dt;
-      g.vy += 4.2 * dt;
-      g.rot += g.spin * dt * 0.6;
+      g.vy += 3.5 * dt;
+      g.rot += g.spin * dt * 0.5;
 
       const peak = Math.max(1, ...counts);
       const scale = board.maxPile / peak;

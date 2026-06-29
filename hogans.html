@@ -279,9 +279,9 @@
   }
 
   function currentFontPx(weight) {
-    const base = 5.0;
-    const range = 12.0;
-    return base + weight * range + random(-0.5, 0.5);
+    const base = 4.0;
+    const range = 18.0;
+    return base + weight * range + random(-0.3, 0.3);
   }
 
   function resize() {
@@ -444,9 +444,9 @@
       g.targetX = binCenter(g.bin);
     }
 
-    g.vx += (right ? 1 : -1) * random(1.5, 3.5);
-    g.vy *= random(0.992, 1.015);
-    g.rot += (right ? 1 : -1) * random(0.006, 0.020);
+    g.vx += (right ? 1 : -1) * random(0.8, 1.8);
+    g.vy *= random(0.995, 1.010);
+    g.rot += (right ? 1 : -1) * random(0.004, 0.012);
     plink();
   }
 
@@ -517,11 +517,11 @@
         stepPeg(g);
       }
 
-      const seek = 1 - Math.exp(-dt * 8.0);
-      const drift = Math.sin(now * 0.0015 + g.phase) * 1.5;
-      g.vx *= Math.pow(0.94, dt * 60);
+      const seek = 1 - Math.exp(-dt * 12.0);
+      const drift = Math.sin(now * 0.0020 + g.phase) * 2.0 + Math.sin(now * 0.0047 + g.phase * 1.3) * 0.8;
+      g.vx *= Math.pow(0.96, dt * 60);
       g.x += (g.targetX - g.x) * seek;
-      g.x += g.vx * dt * 0.35 + drift * dt * 0.8;
+      g.x += g.vx * dt * 0.25 + drift * dt * 0.6;
       g.y += g.vy * dt;
       g.vy += 4.5 * dt;
       g.rot += g.spin * dt * 0.6;

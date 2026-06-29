@@ -593,9 +593,9 @@
       const depth = mark.slot / Math.max(1, counts[mark.bin]);
       const x = binCenter(mark.bin) + mark.jx;
       const y = board.baseline - mark.slot * scale + mark.jy;
-      const settleShrink = lerp(0.70, 1, depth);
+      const settleShrink = lerp(0.80, 1, depth);
       const px = Math.max(6, mark.px * settleShrink);
-      const alpha = mark.alpha * lerp(0.85, 1, depth);
+      const alpha = mark.alpha * lerp(0.92, 1, depth);
 
       mctx.save();
       mctx.translate(x, y);

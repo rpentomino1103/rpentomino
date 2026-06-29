@@ -14,8 +14,8 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background: #070a09;
-    color: #e8eef8;
+    background: #1a1814;
+    color: #f5f2ed;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
@@ -30,8 +30,8 @@
     user-select: none;
     -webkit-user-drag: none;
     pointer-events: none;
-    filter: saturate(0.88) contrast(1.08) brightness(0.82);
-    opacity: 0.92;
+    filter: saturate(0.85) contrast(0.95) brightness(0.92) sepia(0.08);
+    opacity: 0.95;
   }
 
   canvas.layer {
@@ -66,32 +66,32 @@
   .scrim {
     z-index: 1;
     background:
-      radial-gradient(circle at 50% 19%, rgba(255,255,255,0.035), rgba(255,255,255,0) 30%),
-      linear-gradient(180deg, rgba(3,7,8,0.03) 0%, rgba(3,7,8,0.08) 41%, rgba(3,7,8,0.30) 100%);
+      radial-gradient(circle at 50% 30%, rgba(255,250,245,0.06), rgba(255,250,245,0) 35%),
+      linear-gradient(180deg, rgba(26,24,20,0.02) 0%, rgba(26,24,20,0.04) 40%, rgba(26,24,20,0.18) 100%);
   }
 
   .warmth {
     z-index: 2;
-    opacity: 0.42;
+    opacity: 0.28;
     mix-blend-mode: soft-light;
     background:
-      radial-gradient(circle at 24% 68%, rgba(255,195,118,0.28), transparent 31%),
-      radial-gradient(circle at 70% 38%, rgba(133,202,215,0.18), transparent 34%);
+      radial-gradient(circle at 30% 55%, rgba(255,235,210,0.25), transparent 40%),
+      radial-gradient(circle at 70% 35%, rgba(200,220,240,0.18), transparent 42%);
   }
 
   .vignette {
     z-index: 8;
     background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 42%,
-      rgba(0,0,0,0.18) 74%,
-      rgba(0,0,0,0.46) 100%);
+      rgba(0,0,0,0) 45%,
+      rgba(0,0,0,0.12) 75%,
+      rgba(0,0,0,0.35) 100%);
   }
 
   .grain {
     z-index: 9;
-    opacity: 0.075;
-    mix-blend-mode: soft-light;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.84' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
   }
 
   .plate {
@@ -159,9 +159,9 @@
 
   const ROWS_DESKTOP = 12;
   const ROWS_MOBILE = 10;
-  const SPAWN_MS = 165;
-  const MAX_FALLING = 82;
-  const MAX_MARKS = 9000;
+  const SPAWN_MS = 180;
+  const MAX_FALLING = 70;
+  const MAX_MARKS = 9500;
   const MAX_DUST = 1800;
 
   const bg = document.getElementById("bgimg");
@@ -208,24 +208,25 @@
     { t: "1729 = 1³+12³ = 9³+10³", k: "math" },
     { t: "p ≡ 1 (mod 4) ⇒ p = a²+b²", k: "math" },
     { t: "x² − Dy² = 1   [Pell]", k: "math" },
-    { t: "central limit theorem", k: "human" },
-    { t: "binomial → gaussian", k: "human" },
-    { t: "angle of repose", k: "human" },
-    { t: "mean reverts; tails persist", k: "human" },
-    { t: "chalk dust", k: "human" },
-    { t: "erase, then return", k: "human" },
-    { t: "a board worn by use", k: "human" },
-    { t: "regression to the mean", k: "human" },
-    { t: "law of large numbers", k: "human" },
-    { t: "main character energy ✨", k: "ghost" },
-    { t: "the math is mathing 📐", k: "ghost" },
-    { t: "bestie wym 💀", k: "ghost" },
-    { t: "no thoughts head empty 🫧", k: "ghost" },
-    { t: "core memory unlocked 🎐", k: "ghost" },
-    { t: "low key obsessed 😵", k: "ghost" },
-    { t: "vibe check passed 🌷", k: "ghost" },
-    { t: "delulu but make it fashion 👛", k: "ghost" },
-    { t: "the giggle is sending me 🤭", k: "ghost" }
+    { t: "entropy increases", k: "human" },
+    { t: "time's arrow", k: "human" },
+    { t: "emergent order", k: "human" },
+    { t: "strange attractor", k: "human" },
+    { t: "phase transition", k: "human" },
+    { t: "critical mass", k: "human" },
+    { t: "tipping point", k: "human" },
+    { t: "butterfly effect", k: "human" },
+    { t: "self-organizing", k: "human" },
+    { t: "pattern recognition", k: "human" },
+    { t: "the void stares back", k: "poetic" },
+    { t: "silence has weight", k: "poetic" },
+    { t: "light bends", k: "poetic" },
+    { t: "time dilates", k: "poetic" },
+    { t: "entropy whispers", k: "poetic" },
+    { t: "chaos dances", k: "poetic" },
+    { t: "patterns emerge", k: "poetic" },
+    { t: "the curve finds form", k: "poetic" },
+    { t: "order from noise", k: "poetic" }
   ];
 
   let W = 0;
@@ -262,12 +263,16 @@
     if (k === "human") {
       return "italic " + px.toFixed(2) + "px Iowan Old Style, Palatino, Georgia, serif";
     }
+    if (k === "poetic") {
+      return px.toFixed(2) + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    }
     return px.toFixed(2) + "px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
   }
 
   function colorFor(k, alpha) {
     if (k === "math") return "rgba(242,245,235," + alpha.toFixed(3) + ")";
     if (k === "human") return "rgba(215,246,225," + alpha.toFixed(3) + ")";
+    if (k === "poetic") return "rgba(255,220,200," + alpha.toFixed(3) + ")";
     return "rgba(203,230,255," + alpha.toFixed(3) + ")";
   }
 
@@ -422,14 +427,14 @@
       y: startY,
       targetX: startX,
       vx: random(-1.6, 1.6),
-      vy: random(56, 74),
+      vy: random(38, 52),
       row: rowOverride === undefined ? 0 : rowOverride,
       bin: 0,
       px,
       born: performance.now(),
       phase: random(0, Math.PI * 2),
       rot: random(-0.18, 0.18),
-      spin: random(-0.08, 0.08),
+      spin: random(-0.04, 0.04),
       trail: []
     });
   }
@@ -450,20 +455,20 @@
       g.targetX = binCenter(g.bin);
     }
 
-    g.vx += (right ? 1 : -1) * random(2.8, 7.2);
-    g.vy *= random(0.985, 1.02);
-    g.rot += (right ? 1 : -1) * random(0.012, 0.045);
+    g.vx += (right ? 1 : -1) * random(1.8, 4.5);
+    g.vy *= random(0.992, 1.015);
+    g.rot += (right ? 1 : -1) * random(0.008, 0.028);
     plink();
   }
 
   function addDust(x, y, alpha, kind, k) {
     if (dust.length > MAX_DUST) dust.splice(0, dust.length - MAX_DUST);
     dust.push({
-      x: x + random(-6, 6),
-      y: y + random(-5, 5),
-      r: kind === "settle" ? random(1.1, 3.8) : random(0.6, 2.1),
-      a: alpha * random(0.4, 1),
-      life: kind === "settle" ? random(110, 240) : random(18, 42),
+      x: x + random(-4, 4),
+      y: y + random(-3, 3),
+      r: kind === "settle" ? random(0.8, 2.8) : random(0.4, 1.5),
+      a: alpha * random(0.5, 0.9),
+      life: kind === "settle" ? random(140, 280) : random(24, 48),
       kind,
       k
     });
@@ -501,16 +506,16 @@
     ctx.font = fontFor(k, px);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.shadowColor = colorFor(k, alpha * 0.55);
-    ctx.shadowBlur = k === "ghost" ? 18 : 11;
-    ctx.lineWidth = Math.max(1.5, px * 0.12);
-    ctx.strokeStyle = "rgba(0,0,0," + (0.18 * alpha).toFixed(3) + ")";
+    ctx.shadowColor = colorFor(k, alpha * 0.5);
+    ctx.shadowBlur = k === "poetic" ? 16 : k === "human" ? 12 : 9;
+    ctx.lineWidth = Math.max(1.2, px * 0.10);
+    ctx.strokeStyle = "rgba(0,0,0," + (0.12 * alpha).toFixed(3) + ")";
     ctx.strokeText(text, 0, 0);
     ctx.fillStyle = colorFor(k, alpha);
     ctx.fillText(text, 0, 0);
     ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(255,255,255," + (alpha * 0.075).toFixed(3) + ")";
-    ctx.fillText(text, random(-0.45, 0.45), random(-0.45, 0.45));
+    ctx.fillStyle = "rgba(255,255,255," + (alpha * 0.06).toFixed(3) + ")";
+    ctx.fillText(text, random(-0.35, 0.35), random(-0.35, 0.35));
   }
 
   function drawFalling(dt) {
@@ -527,12 +532,12 @@
 
       const seek = 1 - Math.exp(-dt * 7.2);
       const drift = Math.sin(now * 0.0015 + g.phase) * 3.2;
-      g.vx *= Math.pow(0.86, dt * 60);
+      g.vx *= Math.pow(0.92, dt * 60);
       g.x += (g.targetX - g.x) * seek;
-      g.x += g.vx * dt * 0.45 + drift * dt;
+      g.x += g.vx * dt * 0.35 + drift * dt * 0.7;
       g.y += g.vy * dt;
-      g.vy += 6.5 * dt;
-      g.rot += g.spin * dt;
+      g.vy += 4.2 * dt;
+      g.rot += g.spin * dt * 0.6;
 
       const peak = Math.max(1, ...counts);
       const scale = board.maxPile / peak;
@@ -559,13 +564,13 @@
         tctx.moveTo(p0.x, p0.y);
         tctx.lineTo(p1.x, p1.y);
         tctx.strokeStyle = colorFor(g.k, a);
-        tctx.lineWidth = Math.max(1, g.px * 0.09 * (j / g.trail.length));
+        tctx.lineWidth = Math.max(0.8, g.px * 0.08 * (j / g.trail.length));
         tctx.lineCap = "round";
         tctx.stroke();
       }
 
-      const bornA = clamp((now - g.born) / 680, 0, 1);
-      const alpha = bornA * (g.k === "ghost" ? 0.26 : 0.22);
+      const bornA = clamp((now - g.born) / 720, 0, 1);
+      const alpha = bornA * (g.k === "poetic" ? 0.22 : g.k === "human" ? 0.19 : 0.17);
       tctx.save();
       tctx.translate(g.x, g.y);
       tctx.rotate(g.rot);
@@ -589,14 +594,14 @@
         continue;
       }
 
-      const color = d.k === "ghost" ? "186,224,255" : d.k === "human" ? "215,246,225" : "242,245,235";
-      const g = mctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r * 4.2);
+      const color = d.k === "poetic" ? "255,220,200" : d.k === "human" ? "215,246,225" : "242,245,235";
+      const g = mctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r * 4.5);
       g.addColorStop(0, "rgba(" + color + "," + d.a.toFixed(3) + ")");
       g.addColorStop(0.5, "rgba(" + color + "," + (d.a * 0.28).toFixed(3) + ")");
       g.addColorStop(1, "rgba(" + color + ",0)");
       mctx.fillStyle = g;
       mctx.beginPath();
-      mctx.arc(d.x, d.y, d.r * 4.2, 0, Math.PI * 2);
+      mctx.arc(d.x, d.y, d.r * 4.5, 0, Math.PI * 2);
       mctx.fill();
     }
 
